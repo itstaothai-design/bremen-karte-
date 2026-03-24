@@ -3,10 +3,11 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-  <title>Verkaufs-Karte – Grundgerüst</title>
+  <title>Entsorgungs-Karte – Ladestellen</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
   <style>
     :root{
@@ -20,10 +21,11 @@
       --btn-bg:rgba(15,23,42,.06); --btn-border:rgba(15,23,42,.14); --btn-text:#0f172a;
       --btn-primary:#22c55e; --btn-primary-text:#052e16;
 
-      --cust-tri:#4c1d95;
-
       --popup-bg:#ffffff; --popup-text:#0f172a; --popup-border:rgba(15,23,42,.12);
       --pill-bg:rgba(15,23,42,.05); --pill-border:rgba(15,23,42,.12);
+
+      --good:#16a34a; --mid:#f59e0b; --bad:#dc2626;
+      --route:#2563eb;
 
       --highlight:#e11d48;
       --highlight-ring:rgba(225,29,72,.22);
@@ -38,316 +40,129 @@
       --inp-ph:rgba(229,231,235,.55); --inp-focus:rgba(59,130,246,.55);
 
       --btn-bg:rgba(148,163,184,.10); --btn-border:rgba(148,163,184,.22); --btn-text:#e5e7eb;
+
       --popup-bg:#0f172a; --popup-text:#e5e7eb; --popup-border:rgba(148,163,184,.22);
+
       --pill-bg:rgba(148,163,184,.10); --pill-border:rgba(148,163,184,.22);
+      --route:#60a5fa;
 
       --highlight:#fb7185;
       --highlight-ring:rgba(251,113,133,.22);
     }
 
-    html,body{
-      height:100%;
-      margin:0;
-      background:var(--ui-bg);
-      overscroll-behavior:none;
-      font:14px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial;
-    }
-
-    #map{
-      position:absolute;
-      inset:0;
-      width:100%;
-      height:100%;
-      background:#d1d5db;
-    }
+    html,body{height:100%;margin:0;background:var(--ui-bg);overscroll-behavior:none;}
+    #map{position:absolute;inset:0;width:100%;height:100%;background:#d1d5db;}
 
     .topbar{
-      position:fixed;
-      top:0; left:0; right:0;
-      z-index:3000;
-      display:flex;
-      gap:10px;
-      align-items:flex-end;
-      flex-wrap:wrap;
+      position:fixed; top:0; left:0; right:0; z-index:3000;
+      display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;
       padding:10px 12px;
       border-radius:0 0 14px 14px;
       background:var(--ui-bg);
       border:1px solid var(--ui-border);
       border-top:none;
       box-shadow:var(--ui-shadow);
+      font:14px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial;
       color:var(--ui-text);
       backdrop-filter: blur(6px);
     }
 
-    .brandBlock{
-      display:flex;
-      flex-direction:column;
-      gap:6px;
-      align-items:flex-start;
-      margin-right:4px;
-    }
+    .brandBlock{display:flex;flex-direction:column;gap:6px;align-items:flex-start;margin-right:4px;}
+    .brand{font-weight:900;white-space:nowrap;line-height:1;}
 
-    .brand{
-      font-weight:900;
-      white-space:nowrap;
-      line-height:1;
-    }
-
-    .brandBlock select{
-      height:30px;
-      padding:0 10px;
-      border-radius:10px;
-      border:1px solid var(--inp-border);
-      background:var(--inp-bg);
-      color:var(--inp-text);
-      outline:none;
-      font-weight:800;
-      min-width:150px;
-    }
-
-    .field{
-      display:flex;
-      flex-direction:column;
-      gap:4px;
-    }
-
-    .field label{
-      font-size:11px;
-      color:var(--ui-muted);
-      margin-left:2px;
-    }
-
+    .field{display:flex;flex-direction:column;gap:4px}
+    .field label{font-size:11px;color:var(--ui-muted);margin-left:2px}
     .field input,.field select{
-      height:34px;
-      padding:0 10px;
-      border-radius:10px;
+      height:34px;padding:0 10px;border-radius:10px;
       border:1px solid var(--inp-border);
-      background:var(--inp-bg);
-      color:var(--inp-text);
-      outline:none;
-      min-width:120px;
+      background:var(--inp-bg);color:var(--inp-text);outline:none;min-width:120px;
     }
-
-    .field input::placeholder{color:var(--inp-ph);}
-    .field input:focus,.field select:focus{
-      border-color:var(--inp-focus);
-      box-shadow:0 0 0 3px rgba(37,99,235,.12);
-    }
-
-    .w240{min-width:240px;}
-    .w160{min-width:160px;}
-    .w140{min-width:140px;}
+    .field input::placeholder{color:var(--inp-ph)}
+    .field input:focus,.field select:focus{border-color:var(--inp-focus);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+    .w240{min-width:240px}
+    .w180{min-width:180px}
+    .w160{min-width:160px}
+    .w140{min-width:140px}
+    .w120{min-width:120px}
 
     .btn{
-      height:34px;
-      padding:0 12px;
-      border-radius:10px;
+      height:34px;padding:0 12px;border-radius:10px;
       border:1px solid var(--btn-border);
-      background:var(--btn-bg);
-      color:var(--btn-text);
-      cursor:pointer;
-      font-weight:800;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      gap:8px;
-      user-select:none;
+      background:var(--btn-bg);color:var(--btn-text);
+      cursor:pointer;font-weight:800;
+      display:inline-flex;align-items:center;justify-content:center;gap:8px;user-select:none;
     }
-
-    .btn.primary{
-      background:var(--btn-primary);
-      border-color:var(--btn-primary);
-      color:var(--btn-primary-text);
-    }
-
-    .btn:active{transform:translateY(1px);}
+    .btn.primary{background:var(--btn-primary);border-color:var(--btn-primary);color:var(--btn-primary-text);}
+    .btn:active{transform:translateY(1px)}
 
     .pill{
       align-self:center;
-      padding:6px 10px;
-      border-radius:999px;
-      border:1px solid var(--pill-border);
-      background:var(--pill-bg);
-      white-space:nowrap;
-      font-weight:900;
-      color:var(--ui-text);
-      display:flex;
-      gap:8px;
-      align-items:center;
+      padding:6px 10px;border-radius:999px;
+      border:1px solid var(--pill-border);background:var(--pill-bg);
+      white-space:nowrap;font-weight:900;color:var(--ui-text);
+      display:flex;gap:8px;align-items:center;
     }
-
-    #statusPill{margin-left:auto;}
-
-    .dot{
-      width:8px;
-      height:8px;
-      border-radius:50%;
-      background:#22c55e;
-      display:inline-block;
-    }
-
-    .ac{
-      position:absolute;
-      z-index:4000;
-      background:var(--ui-bg);
-      border:1px solid var(--ui-border);
-      border-radius:12px;
-      box-shadow:var(--ui-shadow);
-      overflow:hidden;
-      color:var(--ui-text);
-      max-height:260px;
-      overflow:auto;
-      min-width:320px;
-      display:none;
-    }
-
-    .ac .item{
-      padding:10px 12px;
-      border-bottom:1px solid var(--ui-border);
-      cursor:pointer;
-    }
-
-    .ac .item:last-child{border-bottom:none;}
-    .ac .item:hover{background:var(--ui-soft);}
-    .ac .name{font-weight:900;}
-    .ac .addr{font-size:12px;color:var(--ui-muted);margin-top:2px;}
-    .ac .tag{font-size:11px;color:var(--ui-muted);margin-top:4px;}
+    #loadStatus{margin-left:auto;}
+    .dot{width:8px;height:8px;border-radius:50%;background:rgba(148,163,184,.8);display:inline-block;}
+    .dot.good{background:var(--good)}
+    .dot.mid{background:var(--mid)}
+    .dot.bad{background:var(--bad)}
 
     .panel{
-      position:absolute;
-      top:88px;
-      right:12px;
-      z-index:2500;
-      width:420px;
-      max-height:calc(100vh - 110px);
-      display:flex;
-      flex-direction:column;
+      position:absolute; top:88px; right:12px; z-index:2500;
+      width:680px; max-height:calc(100vh - 110px);
+      display:flex; flex-direction:column;
       background:var(--ui-bg);
       border:1px solid var(--ui-border);
       border-radius:16px;
       box-shadow:var(--ui-shadow);
       overflow:hidden;
+      font:14px/1.25 system-ui,-apple-system,Segoe UI,Roboto,Arial;
       color:var(--ui-text);
+      user-select:none;
     }
-
     .panel.hidden{display:none;}
-
     .panel-h{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      padding:10px 12px;
-      background:var(--ui-soft);
+      display:flex;align-items:center;justify-content:space-between;
+      padding:10px 12px;background:var(--ui-soft);
       border-bottom:1px solid var(--ui-border);
+      cursor:move;
     }
-
-    .panel-h .t{font-weight:900;}
+    .panel-h .t{font-weight:900;display:flex;align-items:center;gap:10px;}
     .panel-h .x{
-      width:30px;
-      height:30px;
-      border-radius:10px;
-      border:1px solid var(--ui-border);
-      background:var(--ui-soft2);
-      color:var(--ui-text);
-      cursor:pointer;
-      font-weight:900;
+      width:30px;height:30px;border-radius:10px;border:1px solid var(--ui-border);
+      background:var(--ui-soft2);color:var(--ui-text);
+      cursor:pointer;font-weight:900;
     }
+    .panel-b{padding:10px 12px;overflow:auto;user-select:text;}
 
-    .panel-b{
-      padding:10px 12px;
-      overflow:auto;
-    }
+    .kpis{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;}
+    .kpi{border:1px solid var(--ui-border);background:var(--ui-soft);border-radius:14px;padding:10px;}
+    .kpi .h{font-size:12px;color:var(--ui-muted)}
+    .kpi .v{font-weight:900;font-size:16px;margin-top:2px}
+    .small{font-size:12px;color:var(--ui-muted)}
 
-    .kpis{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:10px;
-      margin-bottom:10px;
-    }
-
-    .kpi{
+    .detail{
       border:1px solid var(--ui-border);
       background:var(--ui-soft);
-      border-radius:14px;
-      padding:10px;
+      border-radius:14px;padding:10px;
+      margin:10px 0 12px 0;
     }
+    .detail .title{font-weight:900;margin-bottom:6px}
+    .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;font-size:13px;}
+    .kv{display:flex;justify-content:space-between;gap:10px}
+    .k{color:var(--ui-muted)}
+    .v{font-weight:900}
 
-    .kpi .h{font-size:12px;color:var(--ui-muted);}
-    .kpi .v{font-weight:900;font-size:16px;margin-top:2px;}
-
-    .small{font-size:12px;color:var(--ui-muted);}
-
-    .resultCard{
-      border:1px solid var(--ui-border);
-      background:var(--ui-soft);
-      border-radius:14px;
-      padding:10px;
-      margin-bottom:10px;
-      cursor:pointer;
-    }
-
-    .resultCard:hover{background:var(--ui-soft2);}
-    .resultTitle{font-weight:900;}
-    .resultSub{font-size:12px;color:var(--ui-muted);margin-top:3px;}
-
-    .drawerBackdrop{
-      position:fixed;
-      inset:0;
-      z-index:4500;
-      background:rgba(0,0,0,.38);
-      backdrop-filter: blur(2px);
-      display:none;
-    }
-
-    .drawer{
-      position:fixed;
-      top:0; bottom:0; left:0;
-      z-index:5000;
-      width:min(360px, 88vw);
-      background:var(--ui-bg);
-      border-right:1px solid var(--ui-border);
-      box-shadow:18px 0 40px rgba(0,0,0,.22);
-      transform:translateX(-102%);
-      transition:transform .22s ease;
-      display:flex;
-      flex-direction:column;
-      padding:12px;
-      gap:10px;
-      overflow:auto;
-      -webkit-overflow-scrolling:touch;
-    }
-
-    .drawer.open{transform:translateX(0);}
-
-    .drawerTop{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      padding-bottom:8px;
-      border-bottom:1px solid var(--ui-border);
-    }
-
-    .drawerTitle{font-weight:900;}
-
-    .drawerClose{
-      width:34px;
-      height:34px;
-      border-radius:12px;
-      border:1px solid var(--ui-border);
-      background:var(--ui-soft2);
-      color:var(--ui-text);
-      cursor:pointer;
-      font-weight:900;
-    }
-
-    .drawerGrid{
-      display:grid;
-      grid-template-columns:1fr;
-      gap:10px;
-      padding-bottom:12px;
-    }
-
-    #btnMenu{display:none;}
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    th,td{padding:10px 6px;border-bottom:1px solid var(--ui-border);vertical-align:top;text-align:left;}
+    th{font-size:12px;color:var(--ui-muted);font-weight:900;position:sticky;top:0;background:var(--ui-bg);}
+    tr{cursor:pointer}
+    tr:hover{background:var(--ui-soft)}
+    .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:900;border:1px solid var(--ui-border);background:var(--ui-soft);white-space:nowrap;color:var(--ui-text);}
+    .good{background:rgba(22,163,74,.14); border-color:rgba(22,163,74,.35); color:var(--good)}
+    .mid{background:rgba(245,158,11,.16); border-color:rgba(245,158,11,.35); color:var(--mid)}
+    .bad{background:rgba(220,38,38,.14); border-color:rgba(220,38,38,.35); color:var(--bad)}
 
     .leaflet-popup-content-wrapper, .leaflet-popup-tip{
       background:var(--popup-bg);
@@ -356,65 +171,125 @@
       box-shadow:0 12px 34px rgba(2,6,23,.12);
     }
 
-    @media (max-width: 760px){
-      .topbar{
-        gap:8px;
-        padding:8px 10px;
-        align-items:center;
-      }
+    .startMarker{
+      width:18px;height:18px;border-radius:50%;
+      background:var(--highlight);
+      box-shadow:0 0 0 4px var(--highlight-ring), 0 4px 10px rgba(2,6,23,.28);
+      border:2px solid white;
+    }
 
+    #btnMenu{display:none;}
+    .drawerBackdrop{
+      position:fixed;inset:0;z-index:4500;
+      background:rgba(0,0,0,.38);
+      backdrop-filter: blur(2px);
+      display:none;
+    }
+    .drawer{
+      position:fixed; top:0; bottom:0; left:0; z-index:5000;
+      width:min(360px, 88vw);
+      background:var(--ui-bg);
+      border-right:1px solid var(--ui-border);
+      box-shadow:18px 0 40px rgba(0,0,0,.22);
+      transform:translateX(-102%);
+      transition:transform .22s ease;
+      display:flex;flex-direction:column;
+      padding:12px;gap:10px;overflow:auto;-webkit-overflow-scrolling:touch;
+    }
+    .drawer.open{transform:translateX(0);}
+    .drawerTop{
+      display:flex;align-items:center;justify-content:space-between;
+      padding-bottom:8px;border-bottom:1px solid var(--ui-border);
+    }
+    .drawerTitle{font-weight:900}
+    .drawerClose{
+      width:34px;height:34px;border-radius:12px;border:1px solid var(--ui-border);
+      background:var(--ui-soft2); color:var(--ui-text);
+      cursor:pointer; font-weight:900;
+    }
+    .drawerGrid{display:grid;grid-template-columns:1fr;gap:10px;padding-bottom:12px;}
+
+    .panel.mobileSheet{
+      position:fixed; left:10px; right:10px;
+      top:auto; bottom:10px; width:auto;
+      max-height:72vh; border-radius:18px; z-index:5200;
+    }
+    .panel.mobileSheet .panel-h{cursor:default;user-select:none;}
+    .grab{
+      width:44px;height:5px;border-radius:999px;
+      background:rgba(148,163,184,.65);
+      display:none;
+    }
+    .panel.mobileSheet .grab{display:inline-block;}
+    .panel.mobileSheet.collapsed{max-height:54px;overflow:hidden;}
+    .panel.mobileSheet.collapsed .panel-b{display:none;}
+
+    @media (max-width: 760px){
+      .topbar{gap:8px;padding:8px 10px;align-items:center;}
       .topbar .desktopOnly{display:none !important;}
       #btnMenu{display:inline-flex;}
-      #statusPill{margin-left:0;}
-      .ac{min-width:min(92vw, 420px);}
-      .panel{
-        left:10px;
-        right:10px;
-        top:auto;
-        bottom:10px;
-        width:auto;
-        max-height:58vh;
-        border-radius:18px;
-      }
+      #loadStatus{margin-left:0;}
     }
   </style>
 </head>
-<body>
 
+<body>
 <div id="map"></div>
 
 <div class="topbar" id="topbar">
   <button class="btn" id="btnMenu" title="Menü">☰</button>
 
   <div class="brandBlock">
-    <select id="searchType" title="Suche: Kunden oder Firmen">
-      <option value="kunden" selected>Kunden</option>
-      <option value="firmen">Firmen</option>
-    </select>
-    <div class="brand">Verkaufs-Karte</div>
-  </div>
-
-  <div class="field w240 desktopOnly">
-    <label>Suche</label>
-    <input id="searchInput" placeholder="Name / Ort …">
+    <div class="brand">Entsorgungs-Karte</div>
   </div>
 
   <div class="field w140 desktopOnly">
-    <label>Farbschema</label>
-    <select id="colorScheme">
-      <option value="standard">Standard</option>
-      <option value="pink">Pink</option>
-      <option value="pastel">Pastell</option>
+    <label>PLZ Lieferant</label>
+    <input id="supplierPlz" placeholder="z. B. 28195">
+  </div>
+
+  <div class="field w180 desktopOnly">
+    <label>Behandlung</label>
+    <select id="treatment">
+      <option value="">Bitte wählen</option>
+      <option value="Sortierung">Sortierung</option>
+      <option value="Thermisch">Thermisch</option>
     </select>
   </div>
 
+  <div class="field w180 desktopOnly">
+    <label>AVV</label>
+    <select id="avvSelect">
+      <option value="">Lade AVVs…</option>
+    </select>
+  </div>
+
+  <div class="field w120 desktopOnly">
+    <label>Menge (t)</label>
+    <input id="qtyT" type="number" min="0.1" step="0.1" value="24">
+  </div>
+
+  <div class="field w120 desktopOnly">
+    <label>Fracht €/km</label>
+    <input id="freightPerKm" type="number" step="0.01" value="1.85">
+  </div>
+
+  <div class="field w120 desktopOnly">
+    <label>Faktor</label>
+    <input id="factor" type="number" step="0.01" value="1.05" min="0" max="10">
+  </div>
+
+  <div class="field w120 desktopOnly">
+    <label>Ziel-EK €/t</label>
+    <input id="targetEk" type="number" step="0.01" placeholder="optional">
+  </div>
+
   <button class="btn" id="btnTheme" title="Hell/Dunkel umschalten">🌙</button>
-  <button class="btn primary" id="btnShowPanel">Ergebnisse</button>
+  <button class="btn primary" id="btnCalc">Berechnen</button>
+  <button class="btn desktopOnly" id="btnFocusAll">Alle zeigen</button>
 
-  <div class="pill" id="statusPill"><span class="dot"></span> Grundgerüst aktiv</div>
+  <div class="pill" id="loadStatus"><span class="dot"></span> Lade Daten …</div>
 </div>
-
-<div id="ac" class="ac"></div>
 
 <div id="drawerBackdrop" class="drawerBackdrop"></div>
 <aside id="drawer" class="drawer" aria-hidden="true">
@@ -425,46 +300,76 @@
 
   <div class="drawerGrid">
     <div class="field">
-      <label>Suche (Typ)</label>
-      <select id="searchTypeMobile"></select>
+      <label>PLZ Lieferant</label>
+      <input id="supplierPlzMobile" placeholder="z. B. 28195">
     </div>
 
     <div class="field">
-      <label>Suche</label>
-      <input id="searchInputMobile" placeholder="Name / Ort …">
+      <label>Behandlung</label>
+      <select id="treatmentMobile"></select>
     </div>
 
     <div class="field">
-      <label>Farbschema</label>
-      <select id="colorSchemeMobile"></select>
+      <label>AVV</label>
+      <select id="avvSelectMobile"></select>
     </div>
 
-    <button class="btn primary" id="btnShowPanelMobile">Ergebnisse</button>
+    <div class="field">
+      <label>Menge (t)</label>
+      <input id="qtyTMobile" type="number" min="0.1" step="0.1" value="24">
+    </div>
+
+    <div class="field">
+      <label>Fracht €/km</label>
+      <input id="freightPerKmMobile" type="number" step="0.01" value="1.85">
+    </div>
+
+    <div class="field">
+      <label>Faktor</label>
+      <input id="factorMobile" type="number" step="0.01" value="1.05" min="0" max="10">
+    </div>
+
+    <div class="field">
+      <label>Ziel-EK €/t</label>
+      <input id="targetEkMobile" type="number" step="0.01" placeholder="optional">
+    </div>
+
+    <button class="btn primary" id="btnCalcMobile">Berechnen</button>
+    <button class="btn" id="btnFocusAllMobile">Alle zeigen</button>
   </div>
-
-  <div class="small">Das ist nur das Grundgerüst ohne Pellets-Logik.</div>
 </aside>
 
-<div id="panel" class="panel">
-  <div class="panel-h">
-    <div class="t">Ergebnisse</div>
+<div id="panel" class="panel hidden">
+  <div id="panelHeader" class="panel-h" title="Antippen: ein/ausklappen (mobil)">
+    <div class="t"><span class="grab"></span> Ergebnisse</div>
     <button id="closePanel" class="x" title="Schließen">✕</button>
   </div>
-
   <div class="panel-b">
     <div class="kpis">
       <div class="kpi">
-        <div class="h" id="kpiLabel">Auswahl</div>
-        <div class="v" id="kpiName">—</div>
+        <div class="h">Startpunkt</div>
+        <div class="v" id="kpiStart">—</div>
+        <div class="small" id="kpiStartSub">PLZ Lieferant</div>
       </div>
       <div class="kpi">
         <div class="h">Treffer</div>
-        <div class="v" id="kpiCount">0</div>
+        <div class="v" id="kpiCount">—</div>
+        <div class="small" id="kpiQty">Menge: —</div>
+      </div>
+      <div class="kpi">
+        <div class="h">Route</div>
+        <div class="v" id="kpiRoute">—</div>
+        <div class="small">Klick auf Zeile lädt echte Strecke</div>
       </div>
     </div>
 
-    <div class="small" style="margin-bottom:10px;">
-      Wähle oben <b>Kunden</b> oder <b>Firmen</b>, suche einen Eintrag an und klicke auf einen Marker.
+    <div class="detail" id="detailBox" style="display:none">
+      <div class="title" id="detailTitle">Details</div>
+      <div class="detail-grid" id="detailGrid"></div>
+    </div>
+
+    <div class="small" style="margin:6px 0 10px 0">
+      PLZ Lieferant eingeben → Behandlung wählen → AVV wählen → Berechnen.
     </div>
 
     <div id="results"></div>
@@ -472,450 +377,821 @@
 </div>
 
 <script>
-  const LS_THEME_KEY = "salesMap_theme_basic_v1";
-  const LS_COLOR_SCHEME_KEY = "salesMap_colorScheme_basic_v1";
+function saveLS(key, obj){
+  try{ localStorage.setItem(key, JSON.stringify(obj)); }catch(e){}
+}
+function loadLS(key, fallback){
+  try{
+    const s = localStorage.getItem(key);
+    return s ? JSON.parse(s) : fallback;
+  }catch(e){ return fallback; }
+}
 
-  let map;
-  let customerMarkers = [];
-  let firmMarkers = [];
-  let selectedCustomer = null;
-  let selectedFirm = null;
-  let isMobile = false;
+const CONFIG = {
+  spreadsheetId: "1PqhRHsa_QDn8DZ1NuNuBfDgJA-paes68_EZ-KZ7kxGs",
+  geocodeDelayMs: 1100
+};
 
-  const customers = [
-    { id:"C1", name:"Kunde Hamburg", address:"Hamburg", lat:53.5511, lon:9.9937 },
-    { id:"C2", name:"Kunde Hannover", address:"Hannover", lat:52.3759, lon:9.7320 },
-    { id:"C3", name:"Kunde Kassel", address:"Kassel", lat:51.3127, lon:9.4797 }
-  ];
+const URLS = {
+  ladestellen: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=ladestellen`,
+  avv: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=avv`
+};
 
-  const firms = [
-    { id:"F1", name:"Firma Bremen", address:"Bremen", lat:53.0793, lon:8.8017 },
-    { id:"F2", name:"Firma Dortmund", address:"Dortmund", lat:51.5136, lon:7.4653 },
-    { id:"F3", name:"Firma Leipzig", address:"Leipzig", lat:51.3397, lon:12.3731 }
-  ];
+const LS_THEME_KEY = "wasteMap_theme_v1";
+const LS_PANEL_POS_KEY = "wasteMap_panelPos_v1";
+const LS_COLOR_KEY = "wasteMap_themeColor_v1";
+const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v1";
 
-  window.addEventListener("load", init);
+let map;
+let isMobile = false;
 
-  function init(){
-    applyThemeFromLS();
+let ladestellen = [];
+let avvRows = [];
+let avvMap = new Map();
 
-    map = L.map("map", { worldCopyJump:true }).setView([51.2, 10.4], 6);
+let startPoint = null;
+let startMarker = null;
+let startCircle = null;
+let routeLayer = null;
+let lastResults = [];
+let currentFocusedRow = null;
+let stationMarkers = [];
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors"
+let supplierGeoCache = loadLS(LS_SUPPLIER_CACHE, {});
+
+window.addEventListener("load", ()=>init().catch(err=>{
+  console.error("INIT ERROR:", err);
+  alert("Fehler beim Laden der Karte. Öffne F12 → Konsole für Details.");
+}));
+
+async function init(){
+  applyThemeFromLS();
+
+  map = L.map("map", { worldCopyJump:true }).setView([51.2, 10.4], 6);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors"
+  }).addTo(map);
+
+  setTimeout(()=>map.invalidateSize(), 80);
+
+  initUI();
+  initMobileUI();
+  initPanelDragDesktopOnly();
+  applyResponsiveLayout();
+  window.addEventListener("resize", applyResponsiveLayout);
+
+  setLoadStatus("Lade Tabellen …");
+
+  await loadAvv();
+  await loadLadestellen();
+
+  fillAvvDropdown();
+  renderStations();
+  setLoadStatus(`✅ Ladestellen ${ladestellen.length} · AVV ${avvRows.length}`);
+}
+
+function initUI(){
+  document.getElementById("btnTheme").addEventListener("click", ()=>{
+    document.body.classList.toggle("dark");
+    saveLS(LS_THEME_KEY, document.body.classList.contains("dark") ? "dark" : "light");
+    renderStations();
+  });
+
+  document.getElementById("btnCalc").addEventListener("click", calculate);
+  document.getElementById("btnFocusAll").addEventListener("click", fitAllStations);
+  document.getElementById("closePanel").addEventListener("click", ()=>{
+    document.getElementById("panel").classList.add("hidden");
+  });
+
+  const header = document.getElementById("panelHeader");
+  header.addEventListener("click", (e)=>{
+    if(e.target && e.target.id === "closePanel") return;
+    if(!isMobile) return;
+    document.getElementById("panel").classList.toggle("collapsed");
+  });
+}
+
+function initMobileUI(){
+  document.getElementById("btnMenu").addEventListener("click", toggleDrawer);
+  document.getElementById("drawerClose").addEventListener("click", closeDrawer);
+  document.getElementById("drawerBackdrop").addEventListener("click", closeDrawer);
+
+  syncMobileInput("supplierPlz", "supplierPlzMobile");
+  syncMobileSelect("treatment", "treatmentMobile");
+  syncMobileSelect("avvSelect", "avvSelectMobile");
+  syncMobileInput("qtyT", "qtyTMobile");
+  syncMobileInput("freightPerKm", "freightPerKmMobile");
+  syncMobileInput("factor", "factorMobile");
+  syncMobileInput("targetEk", "targetEkMobile");
+
+  document.getElementById("btnCalcMobile").addEventListener("click", ()=>{
+    closeDrawer();
+    calculate();
+  });
+
+  document.getElementById("btnFocusAllMobile").addEventListener("click", ()=>{
+    closeDrawer();
+    fitAllStations();
+  });
+}
+
+function syncMobileSelect(masterId, mobileId){
+  const master = document.getElementById(masterId);
+  const mobile = document.getElementById(mobileId);
+  if(!master || !mobile) return;
+
+  function copyOptions(){
+    mobile.innerHTML = master.innerHTML;
+    mobile.value = master.value;
+  }
+  copyOptions();
+
+  master.addEventListener("change", ()=>copyOptions());
+  mobile.addEventListener("change", ()=>{
+    master.value = mobile.value;
+    master.dispatchEvent(new Event("change"));
+  });
+}
+
+function syncMobileInput(masterId, mobileId){
+  const master = document.getElementById(masterId);
+  const mobile = document.getElementById(mobileId);
+  if(!master || !mobile) return;
+
+  mobile.value = master.value;
+
+  master.addEventListener("input", ()=>{
+    if(mobile.value !== master.value) mobile.value = master.value;
+  });
+  mobile.addEventListener("input", ()=>{
+    if(master.value !== mobile.value) master.value = mobile.value;
+  });
+}
+
+function applyResponsiveLayout(){
+  isMobile = window.matchMedia("(max-width: 760px)").matches;
+
+  const panel = document.getElementById("panel");
+  panel.classList.toggle("mobileSheet", isMobile);
+
+  if(isMobile){
+    panel.style.left = "";
+    panel.style.top = "";
+    panel.style.right = "";
+  }else{
+    const pos = loadLS(LS_PANEL_POS_KEY, null);
+    if(pos && isFinite(pos.x) && isFinite(pos.y)){
+      panel.style.left = pos.x+"px";
+      panel.style.top  = pos.y+"px";
+      panel.style.right = "auto";
+    }else{
+      panel.style.left = "";
+      panel.style.top  = "";
+      panel.style.right = "12px";
+    }
+    panel.classList.remove("collapsed");
+  }
+}
+
+function openDrawer(){
+  document.getElementById("drawer").classList.add("open");
+  document.getElementById("drawerBackdrop").style.display = "block";
+  document.getElementById("drawer").setAttribute("aria-hidden","false");
+}
+function closeDrawer(){
+  document.getElementById("drawer").classList.remove("open");
+  document.getElementById("drawerBackdrop").style.display = "none";
+  document.getElementById("drawer").setAttribute("aria-hidden","true");
+}
+function toggleDrawer(){
+  const open = document.getElementById("drawer").classList.contains("open");
+  open ? closeDrawer() : openDrawer();
+}
+
+function initPanelDragDesktopOnly(){
+  const panel = document.getElementById("panel");
+  const header = document.getElementById("panelHeader");
+
+  const pos = loadLS(LS_PANEL_POS_KEY, null);
+  if(pos && isFinite(pos.x) && isFinite(pos.y)){
+    panel.style.left = pos.x+"px";
+    panel.style.top  = pos.y+"px";
+    panel.style.right = "auto";
+  }
+
+  let dragging=false, sx=0, sy=0, sl=0, st=0;
+  header.addEventListener("mousedown",(e)=>{
+    if(window.matchMedia("(max-width: 760px)").matches) return;
+    dragging=true;
+    const r = panel.getBoundingClientRect();
+    sx=e.clientX; sy=e.clientY; sl=r.left; st=r.top;
+    panel.style.right="auto";
+    e.preventDefault();
+  });
+
+  window.addEventListener("mousemove",(e)=>{
+    if(!dragging) return;
+    const x = Math.max(6, sl + (e.clientX-sx));
+    const y = Math.max(6, st + (e.clientY-sy));
+    panel.style.left = x+"px";
+    panel.style.top  = y+"px";
+  });
+
+  window.addEventListener("mouseup",()=>{
+    if(!dragging) return;
+    dragging=false;
+    const r = panel.getBoundingClientRect();
+    saveLS(LS_PANEL_POS_KEY, {x:r.left, y:r.top});
+  });
+}
+
+function parseCsv(url){
+  return new Promise((resolve, reject)=>{
+    Papa.parse(url, {
+      download:true,
+      header:true,
+      skipEmptyLines:true,
+      delimiter:"",
+      transformHeader:(h)=>String(h||"").trim().toLowerCase(),
+      complete:(res)=>{
+        const first = res?.data?.[0];
+        const keys = first ? Object.keys(first) : [];
+        if(first && keys.length <= 1){
+          Papa.parse(url, {
+            download:true,
+            header:true,
+            skipEmptyLines:true,
+            delimiter:";",
+            transformHeader:(h)=>String(h||"").trim().toLowerCase(),
+            complete:(res2)=>resolve(res2.data),
+            error:reject
+          });
+          return;
+        }
+        resolve(res.data);
+      },
+      error:reject
+    });
+  });
+}
+
+async function loadAvv(){
+  const rows = await parseCsv(URLS.avv);
+
+  avvRows = rows.map(r=>({
+    avv: str(r["avv"]).trim(),
+    beschreibung: str(r["beschreibung"] ?? r["bezeichnung"] ?? r["name"]).trim(),
+    co2: toNum(r["co2"])
+  })).filter(x=>x.avv);
+
+  avvMap = new Map();
+  for(const row of avvRows){
+    avvMap.set(normText(row.avv), row);
+  }
+}
+
+async function loadLadestellen(){
+  const rows = await parseCsv(URLS.ladestellen);
+
+  ladestellen = rows.map((r, idx)=>({
+    id: "L"+idx,
+    firma: str(r["firma"]).trim(),
+    ladestelle: str(r["ladestelle"]).trim(),
+    lat: toNum(r["lat"]),
+    lon: toNum(r["lon"]),
+    preisBasis: toNum(r["preis_basis"]),
+    avv: str(r["avv_erlaubt"]).trim(),
+    behandlung: str(r["behandlung"]).trim(),
+    co2Mod: str(r["co2_mod"]).trim().toLowerCase(),
+    raw: r
+  })).filter(x =>
+    x.ladestelle &&
+    isFinite(x.lat) &&
+    isFinite(x.lon) &&
+    x.avv &&
+    x.behandlung
+  );
+}
+
+function fillAvvDropdown(){
+  const sel = document.getElementById("avvSelect");
+  sel.innerHTML = `<option value="">Bitte wählen</option>` +
+    avvRows
+      .sort((a,b)=>a.avv.localeCompare(b.avv, "de"))
+      .map(x=>`<option value="${escAttr(x.avv)}">${esc(x.avv)} – ${esc(x.beschreibung || "")}</option>`)
+      .join("");
+
+  syncMobileSelect("avvSelect", "avvSelectMobile");
+}
+
+function renderStations(results=null){
+  stationMarkers.forEach(m=>{
+    try{ map.removeLayer(m); }catch(e){}
+  });
+  stationMarkers = [];
+
+  const highlight = getComputedStyle(document.body).getPropertyValue("--highlight").trim() || "#e11d48";
+  const highlightRing = getComputedStyle(document.body).getPropertyValue("--highlight-ring").trim() || "rgba(225,29,72,.22)";
+  const outline = document.body.classList.contains("dark") ? "rgba(229,231,235,.9)" : "rgba(15,23,42,.9)";
+
+  const scoreMap = new Map();
+  if(Array.isArray(results)){
+    for(const r of results) scoreMap.set(r.entity.id, r);
+  }
+
+  for(const x of ladestellen){
+    const row = scoreMap.get(x.id);
+    const isSelected = currentFocusedRow && currentFocusedRow.entity.id === x.id;
+
+    let fill = "#64748b";
+    if(row){
+      fill = getResultColor(row);
+    }
+
+    const m = L.circleMarker([x.lat, x.lon], {
+      radius:isSelected ? 10 : 7,
+      color:isSelected ? highlight : outline,
+      weight:isSelected ? 4 : 2,
+      fillColor:fill,
+      fillOpacity:.9
     }).addTo(map);
 
-    initUI();
-    initMobileUI();
-    applyResponsiveLayout();
-    window.addEventListener("resize", applyResponsiveLayout);
-
-    renderMarkers();
-    renderResults();
-  }
-
-  function initUI(){
-    const schemeSel = document.getElementById("colorScheme");
-    schemeSel.value = localStorage.getItem(LS_COLOR_SCHEME_KEY) || "standard";
-
-    schemeSel.addEventListener("change", ()=>{
-      localStorage.setItem(LS_COLOR_SCHEME_KEY, schemeSel.value);
-      syncMobileSelectValue("colorScheme", "colorSchemeMobile");
-      renderMarkers();
-    });
-
-    document.getElementById("searchType").addEventListener("change", ()=>{
-      selectedCustomer = null;
-      selectedFirm = null;
-      syncMobileSelectValue("searchType", "searchTypeMobile");
-      renderMarkers();
-      renderResults();
-      document.getElementById("searchInput").value = "";
-      document.getElementById("ac").style.display = "none";
-      document.getElementById("kpiLabel").textContent = getSearchType() === "kunden" ? "Kunde" : "Firma";
-      document.getElementById("kpiName").textContent = "—";
-    });
-
-    document.getElementById("btnTheme").addEventListener("click", ()=>{
-      document.body.classList.toggle("dark");
-      localStorage.setItem(LS_THEME_KEY, document.body.classList.contains("dark") ? "dark" : "light");
-      renderMarkers();
-    });
-
-    document.getElementById("btnShowPanel").addEventListener("click", ()=>{
-      document.getElementById("panel").classList.remove("hidden");
-    });
-
-    document.getElementById("closePanel").addEventListener("click", ()=>{
-      document.getElementById("panel").classList.add("hidden");
-    });
-
-    const input = document.getElementById("searchInput");
-    const ac = document.getElementById("ac");
-
-    function positionAC(){
-      const activeInput = document.activeElement === document.getElementById("searchInputMobile")
-        ? document.getElementById("searchInputMobile")
-        : input;
-
-      const r = activeInput.getBoundingClientRect();
-      ac.style.left = (r.left + window.scrollX) + "px";
-      ac.style.top = (r.bottom + window.scrollY + 8) + "px";
-      ac.style.minWidth = Math.max(280, r.width) + "px";
+    if(isSelected){
+      const ring = L.circleMarker([x.lat,x.lon], {
+        radius:18,color:highlight,weight:2,fillColor:highlightRing,fillOpacity:0.18
+      }).addTo(map);
+      stationMarkers.push(ring);
     }
 
-    window.addEventListener("resize", positionAC);
-    window.addEventListener("scroll", positionAC, true);
+    const popupText = `
+      <b>${esc(x.firma || "—")}</b><br>
+      ${esc(x.ladestelle)}<br>
+      <small>AVV: ${esc(x.avv)} · ${esc(x.behandlung)} · Basis: ${fmt(x.preisBasis)} €/t</small>
+    `;
 
-    input.addEventListener("focus", ()=>{
-      positionAC();
-      showSuggestions(input.value);
-    });
-
-    input.addEventListener("input", ()=>{
-      positionAC();
-      showSuggestions(input.value);
-    });
-
-    input.addEventListener("keydown", (e)=>{
-      if(e.key === "Escape") ac.style.display = "none";
-      if(e.key === "Enter"){
-        const match = bestMatch(input.value.trim().toLowerCase());
-        if(match){
-          selectEntity(match);
-          ac.style.display = "none";
-        }
+    m.bindPopup(popupText);
+    m.on("click", async ()=>{
+      const hit = lastResults.find(r => r.entity.id === x.id);
+      if(hit && startPoint){
+        await showRouteDetails(startPoint, x, hit);
+      }else{
+        m.openPopup();
       }
     });
 
-    document.addEventListener("click", (e)=>{
-      const mobileInput = document.getElementById("searchInputMobile");
-      if(ac.contains(e.target) || e.target === input || e.target === mobileInput) return;
-      ac.style.display = "none";
-    });
+    stationMarkers.push(m);
   }
+}
 
-  function initMobileUI(){
-    syncMobileSelect("searchType", "searchTypeMobile");
-    syncMobileSelect("colorScheme", "colorSchemeMobile");
-    syncMobileInput("searchInput", "searchInputMobile");
+async function geocodeSupplierPlz(plz){
+  const clean = String(plz || "").trim();
+  if(!clean) return null;
 
-    document.getElementById("btnMenu").addEventListener("click", toggleDrawer);
-    document.getElementById("drawerClose").addEventListener("click", closeDrawer);
-    document.getElementById("drawerBackdrop").addEventListener("click", closeDrawer);
+  if(supplierGeoCache[clean]) return supplierGeoCache[clean];
 
-    document.getElementById("btnShowPanelMobile").addEventListener("click", ()=>{
-      document.getElementById("panel").classList.remove("hidden");
-      closeDrawer();
-    });
+  const q = `${clean}, Deutschland`;
+  const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=de&q=" + encodeURIComponent(q);
 
-    document.getElementById("searchTypeMobile").addEventListener("change", ()=>{
-      document.getElementById("searchType").dispatchEvent(new Event("change"));
-    });
-
-    document.getElementById("colorSchemeMobile").addEventListener("change", ()=>{
-      document.getElementById("colorScheme").dispatchEvent(new Event("change"));
-    });
-
-    document.getElementById("searchInputMobile").addEventListener("focus", ()=>{
-      const desktop = document.getElementById("searchInput");
-      desktop.value = document.getElementById("searchInputMobile").value;
-      desktop.dispatchEvent(new Event("focus"));
-    });
-
-    document.getElementById("searchInputMobile").addEventListener("input", ()=>{
-      const desktop = document.getElementById("searchInput");
-      desktop.value = document.getElementById("searchInputMobile").value;
-      desktop.dispatchEvent(new Event("input"));
-    });
-
-    document.getElementById("searchInputMobile").addEventListener("keydown", (e)=>{
-      const desktop = document.getElementById("searchInput");
-      desktop.value = document.getElementById("searchInputMobile").value;
-      desktop.dispatchEvent(new KeyboardEvent("keydown", { key:e.key }));
-    });
-  }
-
-  function applyResponsiveLayout(){
-    isMobile = window.matchMedia("(max-width: 760px)").matches;
-  }
-
-  function openDrawer(){
-    document.getElementById("drawer").classList.add("open");
-    document.getElementById("drawerBackdrop").style.display = "block";
-    document.getElementById("drawer").setAttribute("aria-hidden","false");
-  }
-
-  function closeDrawer(){
-    document.getElementById("drawer").classList.remove("open");
-    document.getElementById("drawerBackdrop").style.display = "none";
-    document.getElementById("drawer").setAttribute("aria-hidden","true");
-  }
-
-  function toggleDrawer(){
-    const open = document.getElementById("drawer").classList.contains("open");
-    open ? closeDrawer() : openDrawer();
-  }
-
-  function syncMobileSelect(masterId, mobileId){
-    const master = document.getElementById(masterId);
-    const mobile = document.getElementById(mobileId);
-
-    function copy(){
-      mobile.innerHTML = master.innerHTML;
-      mobile.value = master.value;
+  try{
+    const res = await fetch(url, { headers: { "Accept":"application/json" } });
+    const data = await res.json();
+    if(data && data[0]){
+      const result = {
+        lat: parseFloat(data[0].lat),
+        lon: parseFloat(data[0].lon),
+        label: data[0].display_name || q
+      };
+      if(isFinite(result.lat) && isFinite(result.lon)){
+        supplierGeoCache[clean] = result;
+        saveLS(LS_SUPPLIER_CACHE, supplierGeoCache);
+        return result;
+      }
     }
+  }catch(e){
+    console.error("Geocode Fehler:", e);
+  }
+  return null;
+}
 
-    copy();
+function setStartPoint(geo, plz){
+  startPoint = {
+    id: "START",
+    name: `PLZ ${plz}`,
+    label: geo.label || `PLZ ${plz}`,
+    lat: geo.lat,
+    lon: geo.lon
+  };
 
-    master.addEventListener("change", copy);
-    mobile.addEventListener("change", ()=>{
-      master.value = mobile.value;
-    });
+  if(startMarker){
+    try{ map.removeLayer(startMarker); }catch(e){}
+    startMarker = null;
+  }
+  if(startCircle){
+    try{ map.removeLayer(startCircle); }catch(e){}
+    startCircle = null;
   }
 
-  function syncMobileSelectValue(masterId, mobileId){
-    const master = document.getElementById(masterId);
-    const mobile = document.getElementById(mobileId);
-    if(mobile) mobile.value = master.value;
+  startMarker = L.marker([geo.lat, geo.lon], {
+    icon: L.divIcon({
+      html:`<div class="startMarker"></div>`,
+      className:"",
+      iconSize:[18,18],
+      iconAnchor:[9,9]
+    })
+  }).addTo(map);
+
+  startMarker.bindPopup(`<b>Startpunkt</b><br>${esc(startPoint.name)}<br><small>${esc(startPoint.label)}</small>`);
+
+  startCircle = L.circleMarker([geo.lat, geo.lon], {
+    radius:16,
+    color:getComputedStyle(document.body).getPropertyValue("--highlight").trim() || "#e11d48",
+    weight:2,
+    fillColor:getComputedStyle(document.body).getPropertyValue("--highlight-ring").trim() || "rgba(225,29,72,.22)",
+    fillOpacity:0.22
+  }).addTo(map);
+
+  document.getElementById("kpiStart").textContent = `PLZ ${plz}`;
+  document.getElementById("kpiStartSub").textContent = geo.label || "—";
+}
+
+async function calculate(){
+  clearRoute();
+  hideDetail();
+  currentFocusedRow = null;
+
+  const panel = document.getElementById("panel");
+  panel.classList.remove("hidden");
+  if(isMobile) panel.classList.remove("collapsed");
+
+  const out = document.getElementById("results");
+  out.innerHTML = "";
+
+  const inputs = getInputs();
+  const { plz, behandlung, avv, qtyT, freightPerKm, factor, targetEk } = inputs;
+
+  document.getElementById("kpiQty").textContent = `Menge: ${fmt(qtyT,1)} t`;
+  document.getElementById("kpiRoute").textContent = "—";
+
+  if(!plz){
+    out.innerHTML = `<div class="small">Bitte eine PLZ vom Lieferanten eingeben.</div>`;
+    document.getElementById("kpiCount").textContent = "—";
+    return;
+  }
+  if(!behandlung){
+    out.innerHTML = `<div class="small">Bitte eine Behandlung auswählen.</div>`;
+    document.getElementById("kpiCount").textContent = "—";
+    return;
+  }
+  if(!avv){
+    out.innerHTML = `<div class="small">Bitte eine AVV auswählen.</div>`;
+    document.getElementById("kpiCount").textContent = "—";
+    return;
   }
 
-  function syncMobileInput(masterId, mobileId){
-    const master = document.getElementById(masterId);
-    const mobile = document.getElementById(mobileId);
+  setLoadStatus("PLZ wird geocodet …");
+  const geo = await geocodeSupplierPlz(plz);
 
-    mobile.value = master.value;
-
-    master.addEventListener("input", ()=>{
-      if(mobile.value !== master.value) mobile.value = master.value;
-    });
-
-    mobile.addEventListener("input", ()=>{
-      if(master.value !== mobile.value) master.value = mobile.value;
-    });
+  if(!geo){
+    out.innerHTML = `<div class="small">PLZ konnte nicht gefunden werden.</div>`;
+    document.getElementById("kpiCount").textContent = "0";
+    setLoadStatus("⚠️ PLZ nicht gefunden");
+    return;
   }
 
-  function getSearchType(){
-    return document.getElementById("searchType").value || "kunden";
-  }
+  setStartPoint(geo, plz);
 
-  function getActiveList(){
-    return getSearchType() === "kunden" ? customers : firms;
-  }
+  const avvInfo = avvMap.get(normText(avv));
+  const co2Value = avvInfo && isFinite(avvInfo.co2) ? avvInfo.co2 : NaN;
 
-  function showSuggestions(qRaw){
-    const q = String(qRaw || "").trim().toLowerCase();
-    const ac = document.getElementById("ac");
-    ac.innerHTML = "";
+  const results = [];
 
-    if(!q){
-      ac.style.display = "none";
-      return;
-    }
+  for(const x of ladestellen){
+    if(normText(x.behandlung) !== normText(behandlung)) continue;
+    if(normText(x.avv) !== normText(avv)) continue;
 
-    const list = getActiveList();
-    const starts = [];
-    const contains = [];
+    const kmAir = haversineKm(startPoint.lat, startPoint.lon, x.lat, x.lon);
 
-    for(const x of list){
-      const name = (x.name || "").toLowerCase();
-      const addr = (x.address || "").toLowerCase();
-      if(name.startsWith(q) || addr.startsWith(q)) starts.push(x);
-      else if(name.includes(q) || addr.includes(q)) contains.push(x);
-    }
+    let preisNachCo2 = x.preisBasis;
+    let co2Anteil = 0;
 
-    const out = [...starts, ...contains].slice(0, 12);
-    if(!out.length){
-      ac.style.display = "none";
-      return;
-    }
-
-    const tag = getSearchType() === "kunden" ? "Kunde" : "Firma";
-
-    for(const x of out){
-      const div = document.createElement("div");
-      div.className = "item";
-      div.innerHTML = `
-        <div class="name">${esc(x.name)}</div>
-        <div class="addr">${esc(x.address)}</div>
-        <div class="tag">${tag}</div>
-      `;
-      div.addEventListener("click", ()=>{
-        selectEntity(x);
-        ac.style.display = "none";
-        closeDrawer();
-      });
-      ac.appendChild(div);
-    }
-
-    ac.style.display = "block";
-  }
-
-  function bestMatch(q){
-    if(!q) return null;
-    const list = getActiveList();
-    const starts = list.filter(x =>
-      (x.name || "").toLowerCase().startsWith(q) ||
-      (x.address || "").toLowerCase().startsWith(q)
-    );
-    if(starts.length) return starts[0];
-
-    const contains = list.filter(x =>
-      (x.name || "").toLowerCase().includes(q) ||
-      (x.address || "").toLowerCase().includes(q)
-    );
-    return contains[0] || null;
-  }
-
-  function selectEntity(entity){
-    if(getSearchType() === "kunden"){
-      selectedCustomer = entity;
-      selectedFirm = null;
+    if(x.co2Mod === "add"){
+      if(isFinite(co2Value)){
+        co2Anteil = co2Value;
+        preisNachCo2 = x.preisBasis + co2Value;
+      }
     }else{
-      selectedFirm = entity;
-      selectedCustomer = null;
+      co2Anteil = 0;
+      preisNachCo2 = x.preisBasis;
     }
 
-    document.getElementById("kpiLabel").textContent = getSearchType() === "kunden" ? "Kunde" : "Firma";
-    document.getElementById("kpiName").textContent = entity.name;
+    const freightPerT = (kmAir * freightPerKm / qtyT) * factor;
+    const ekProT = preisNachCo2 + freightPerT;
+    const gesamt = ekProT * qtyT;
+    const delta = isFinite(targetEk) ? (targetEk - ekProT) : NaN;
 
-    map.setView([entity.lat, entity.lon], 8, { animate:true });
-    renderMarkers();
-    renderResults();
-    document.getElementById("panel").classList.remove("hidden");
+    results.push({
+      entity: x,
+      kmAir,
+      calcKm: kmAir,
+      preisBasis: x.preisBasis,
+      co2Mod: x.co2Mod,
+      co2Anteil,
+      preisNachCo2,
+      freightPerT,
+      ekProT,
+      gesamt,
+      delta
+    });
   }
 
-  function renderMarkers(){
-    customerMarkers.forEach(m => map.removeLayer(m));
-    firmMarkers.forEach(m => map.removeLayer(m));
-    customerMarkers = [];
-    firmMarkers = [];
+  results.sort((a,b)=>a.ekProT - b.ekProT);
+  lastResults = results;
+  document.getElementById("kpiCount").textContent = String(results.length);
 
-    const outline = document.body.classList.contains("dark")
-      ? "rgba(229,231,235,.9)"
-      : "rgba(15,23,42,.9)";
+  renderStations(results);
 
-    const highlight = getComputedStyle(document.body).getPropertyValue("--highlight").trim() || "#e11d48";
-    const highlightRing = getComputedStyle(document.body).getPropertyValue("--highlight-ring").trim() || "rgba(225,29,72,.22)";
+  if(results.length){
+    const bounds = L.latLngBounds(results.map(r=>[r.entity.lat, r.entity.lon]));
+    bounds.extend([startPoint.lat, startPoint.lon]);
+    map.fitBounds(bounds, {padding:[35,35]});
+  }else{
+    map.setView([startPoint.lat, startPoint.lon], 8, {animate:true});
+  }
 
-    customers.forEach(c=>{
-      const isSelected = selectedCustomer && selectedCustomer.id === c.id;
+  setLoadStatus(`✅ Treffer ${results.length}`);
 
-      const m = L.marker([c.lat, c.lon], { icon: customerTriangleIcon(isSelected) }).addTo(map);
-      m.on("click", ()=>selectEntity(c));
+  if(!results.length){
+    out.innerHTML = `<div class="small">Keine passenden Ladestellen gefunden.</div>`;
+    return;
+  }
 
-      if(isSelected){
-        const ring = L.circleMarker([c.lat, c.lon], {
-          radius:16,
-          color:highlight,
-          weight:3,
-          fillColor:highlightRing,
-          fillOpacity:0.25
-        }).addTo(map);
-        customerMarkers.push(ring);
-      }
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Firma / Ladestelle</th>
+        <th>KM</th>
+        <th>EK</th>
+        <th>${isFinite(targetEk) ? "Abweichung" : "Info"}</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
 
-      m.bindPopup(`<b>${esc(c.name)}</b><br>${esc(c.address)}<br><small>Kunde</small>`);
-      customerMarkers.push(m);
+  const tbody = table.querySelector("tbody");
+
+  for(const row of results){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>
+        <b>${esc(row.entity.firma || "—")}</b><br>
+        <span class="small">${esc(row.entity.ladestelle)}</span><br>
+        <span class="small">AVV ${esc(row.entity.avv)} · ${esc(row.entity.behandlung)} · Basis ${fmt(row.preisBasis)} €/t</span>
+      </td>
+      <td>${fmt(row.calcKm,0)}</td>
+      <td>
+        <b>${fmt(row.ekProT)} €/t</b><br>
+        <span class="small">${fmt(row.gesamt)} € für ${fmt(qtyT,1)} t</span>
+      </td>
+      <td>${makeBadge(row, targetEk)}</td>
+    `;
+    tr.addEventListener("click", async ()=>{
+      await showRouteDetails(startPoint, row.entity, row);
     });
+    tbody.appendChild(tr);
+  }
 
-    firms.forEach(f=>{
-      const isSelected = selectedFirm && selectedFirm.id === f.id;
+  out.appendChild(table);
+}
 
-      const m = L.circleMarker([f.lat, f.lon], {
-        radius:isSelected ? 10 : 7,
-        color:isSelected ? highlight : outline,
-        weight:isSelected ? 4 : 2,
-        fillColor:firmColor(),
-        fillOpacity:.9
+function makeBadge(row, targetEk){
+  if(!isFinite(targetEk)) return `<span class="badge">Klick für Route</span>`;
+  const d = row.delta;
+  if(!isFinite(d)) return `<span class="badge">—</span>`;
+  if(d >= 10) return `<span class="badge good">+${fmt(d)} €/t</span>`;
+  if(d >= 0)  return `<span class="badge mid">+${fmt(d)} €/t</span>`;
+  return `<span class="badge bad">${fmt(d)} €/t</span>`;
+}
+
+function getResultColor(row){
+  const targetEk = toNum(document.getElementById("targetEk").value);
+  if(!isFinite(targetEk) || !isFinite(row.delta)) return "#2563eb";
+  if(row.delta >= 10) return "#16a34a";
+  if(row.delta >= 0) return "#f59e0b";
+  return "#dc2626";
+}
+
+async function getRouteData(from, to){
+  try{
+    const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if(data && data.routes && data.routes[0]){
+      const r = data.routes[0];
+      return {
+        km: r.distance / 1000,
+        minutes: r.duration / 60,
+        geometry: r.geometry
+      };
+    }
+  }catch(e){
+    console.error("Routing Fehler:", e);
+  }
+  return null;
+}
+
+async function showRouteDetails(origin, target, baseRow){
+  clearRoute();
+  document.getElementById("kpiRoute").textContent = "Route lädt …";
+
+  const route = await getRouteData(origin, target);
+
+  let usedKm = baseRow.calcKm;
+  let minutes = null;
+
+  if(route && isFinite(route.km)){
+    usedKm = route.km;
+    minutes = route.minutes;
+
+    if(route.geometry && route.geometry.coordinates){
+      const latlngs = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+      routeLayer = L.polyline(latlngs, {
+        color: getComputedStyle(document.body).getPropertyValue("--route").trim() || "#2563eb",
+        weight: 5,
+        opacity: 0.9
       }).addTo(map);
 
-      m.on("click", ()=>selectEntity(f));
-      m.bindPopup(`<b>${esc(f.name)}</b><br>${esc(f.address)}<br><small>Firma</small>`);
-      firmMarkers.push(m);
-
-      if(isSelected){
-        const ring = L.circleMarker([f.lat, f.lon], {
-          radius:18,
-          color:highlight,
-          weight:2,
-          fillColor:highlightRing,
-          fillOpacity:0.18
-        }).addTo(map);
-        firmMarkers.push(ring);
-      }
-    });
+      try{
+        map.fitBounds(routeLayer.getBounds(), {padding:[30,30]});
+      }catch(e){}
+    }
   }
 
-  function renderResults(){
-    const box = document.getElementById("results");
-    const mode = getSearchType();
-    const list = mode === "kunden" ? customers : firms;
+  const inputs = getInputs();
+  const qtyT = inputs.qtyT;
+  const freightPerKm = inputs.freightPerKm;
+  const factor = inputs.factor;
+  const targetEk = inputs.targetEk;
 
-    document.getElementById("kpiCount").textContent = String(list.length);
+  const freightPerT = (usedKm * freightPerKm / qtyT) * factor;
+  const ekProT = baseRow.preisNachCo2 + freightPerT;
+  const gesamt = ekProT * qtyT;
+  const delta = isFinite(targetEk) ? (targetEk - ekProT) : NaN;
 
-    box.innerHTML = list.map(item => `
-      <div class="resultCard" data-id="${item.id}">
-        <div class="resultTitle">${esc(item.name)}</div>
-        <div class="resultSub">${esc(item.address)} · ${mode === "kunden" ? "Kunde" : "Firma"}</div>
-      </div>
-    `).join("");
+  document.getElementById("kpiRoute").textContent =
+    `${fmt(usedKm,0)} km${isFinite(minutes) ? ` · ${fmt(minutes,0)} min` : ""}`;
 
-    box.querySelectorAll(".resultCard").forEach(card=>{
-      card.addEventListener("click", ()=>{
-        const id = card.dataset.id;
-        const entity = list.find(x => x.id === id);
-        if(entity) selectEntity(entity);
-      });
-    });
+  currentFocusedRow = {
+    entity: target,
+    routeKm: usedKm,
+    durationMin: minutes,
+    preisBasis: baseRow.preisBasis,
+    co2Mod: baseRow.co2Mod,
+    co2Anteil: baseRow.co2Anteil,
+    preisNachCo2: baseRow.preisNachCo2,
+    freightPerT,
+    ekProT,
+    gesamt,
+    delta
+  };
+
+  renderStations(lastResults);
+  showDetail(currentFocusedRow);
+}
+
+function showDetail(row){
+  const box = document.getElementById("detailBox");
+  const grid = document.getElementById("detailGrid");
+  const title = document.getElementById("detailTitle");
+  const qtyT = Math.max(0.1, toNum(document.getElementById("qtyT").value) || 24);
+  const targetEk = toNum(document.getElementById("targetEk").value);
+
+  title.textContent = `Details – ${row.entity.firma || "Ladestelle"}`;
+
+  grid.innerHTML = `
+    <div class="kv"><span class="k">Firma</span><span class="v">${esc(row.entity.firma || "—")}</span></div>
+    <div class="kv"><span class="k">Ladestelle</span><span class="v">${esc(row.entity.ladestelle)}</span></div>
+
+    <div class="kv"><span class="k">AVV</span><span class="v">${esc(row.entity.avv)}</span></div>
+    <div class="kv"><span class="k">Behandlung</span><span class="v">${esc(row.entity.behandlung)}</span></div>
+
+    <div class="kv"><span class="k">KM</span><span class="v">${fmt(row.routeKm,2)} km</span></div>
+    <div class="kv"><span class="k">Fahrzeit</span><span class="v">${isFinite(row.durationMin) ? fmt(row.durationMin,0)+" min" : "—"}</span></div>
+
+    <div class="kv"><span class="k">Preis_Basis</span><span class="v">${fmt(row.preisBasis)} €/t</span></div>
+    <div class="kv"><span class="k">CO2_mod</span><span class="v">${esc(row.co2Mod || "—")}</span></div>
+
+    <div class="kv"><span class="k">CO2 Anteil</span><span class="v">${fmt(row.co2Anteil)} €/t</span></div>
+    <div class="kv"><span class="k">Preis nach CO2</span><span class="v">${fmt(row.preisNachCo2)} €/t</span></div>
+
+    <div class="kv"><span class="k">Fracht</span><span class="v">${fmt(row.freightPerT)} €/t</span></div>
+    <div class="kv"><span class="k">EK / t</span><span class="v">${fmt(row.ekProT)} €/t</span></div>
+
+    <div class="kv"><span class="k">Menge</span><span class="v">${fmt(qtyT,1)} t</span></div>
+    <div class="kv"><span class="k">Gesamt</span><span class="v">${fmt(row.gesamt)} €</span></div>
+
+    <div class="kv"><span class="k">Ziel-EK</span><span class="v">${isFinite(targetEk) ? fmt(targetEk)+" €/t" : "—"}</span></div>
+    <div class="kv"><span class="k">Abweichung</span><span class="v">${isFinite(row.delta) ? fmt(row.delta)+" €/t" : "—"}</span></div>
+
+    <div class="kv"><span class="k">Routing</span><span class="v">${isFinite(row.durationMin) ? "echte Strecke" : "Luftlinie-Fallback"}</span></div>
+    <div class="kv"><span class="k">Koordinaten</span><span class="v">${fmt(row.entity.lat,5)}, ${fmt(row.entity.lon,5)}</span></div>
+  `;
+
+  box.style.display = "block";
+}
+
+function clearRoute(){
+  if(routeLayer){
+    try{ map.removeLayer(routeLayer); }catch(e){}
+    routeLayer = null;
   }
+  document.getElementById("kpiRoute").textContent = "—";
+}
 
-  function customerTriangleIcon(selected=false){
-    const color = selected ? "var(--highlight)" : "var(--cust-tri)";
-    const size = selected ? 24 : 18;
-    const shadow = selected
-      ? "drop-shadow(0 0 0 4px var(--highlight-ring)) drop-shadow(0 4px 10px rgba(2,6,23,.28))"
-      : "drop-shadow(0 3px 6px rgba(2,6,23,.25))";
+function hideDetail(){
+  document.getElementById("detailBox").style.display="none";
+  document.getElementById("detailGrid").innerHTML="";
+  document.getElementById("detailTitle").textContent="Details";
+}
 
-    return L.divIcon({
-      html:`<div style="
-        width:0;height:0;
-        border-left:${Math.round(size*0.55)}px solid transparent;
-        border-right:${Math.round(size*0.55)}px solid transparent;
-        border-bottom:${size}px solid ${color};
-        filter:${shadow};
-      "></div>`,
-      className:"",
-      iconSize:[size+6,size+6],
-      iconAnchor:[(size+6)/2,size+2]
-    });
-  }
+function fitAllStations(){
+  if(!ladestellen.length) return;
+  const bounds = L.latLngBounds(ladestellen.map(x=>[x.lat,x.lon]));
+  if(startPoint) bounds.extend([startPoint.lat, startPoint.lon]);
+  map.fitBounds(bounds, {padding:[35,35]});
+}
 
-  function firmColor(){
-    const scheme = document.getElementById("colorScheme")?.value || "standard";
-    const palettes = {
-      standard:"#2563eb",
-      pink:"#e11d48",
-      pastel:"#93c5fd"
-    };
-    return palettes[scheme] || "#2563eb";
-  }
+function setLoadStatus(text){
+  const el = document.getElementById("loadStatus");
+  el.innerHTML = `<span class="dot"></span> ${esc(text)}`;
+}
 
-  function applyThemeFromLS(){
-    const t = localStorage.getItem(LS_THEME_KEY) || "light";
-    if(t === "dark") document.body.classList.add("dark");
-  }
+function applyThemeFromLS(){
+  const t = loadLS(LS_THEME_KEY, "light");
+  if(t === "dark") document.body.classList.add("dark");
+}
 
-  function esc(s){
-    return String(s).replace(/[&<>"']/g, m => ({
-      "&":"&amp;",
-      "<":"&lt;",
-      ">":"&gt;",
-      '"':"&quot;",
-      "'":"&#039;"
-    }[m]));
-  }
+function getInputs(){
+  const factor = toNum(document.getElementById("factor").value);
+  return {
+    plz: str(document.getElementById("supplierPlz").value).trim(),
+    behandlung: str(document.getElementById("treatment").value).trim(),
+    avv: str(document.getElementById("avvSelect").value).trim(),
+    qtyT: Math.max(0.1, toNum(document.getElementById("qtyT").value) || 24),
+    freightPerKm: toNum(document.getElementById("freightPerKm").value) || 1.85,
+    factor: isFinite(factor) ? factor : 1.05,
+    targetEk: toNum(document.getElementById("targetEk").value)
+  };
+}
+
+function toNum(v){
+  if(v===null || v===undefined) return NaN;
+  if(typeof v==="number") return v;
+  let s = String(v).trim();
+  if(!s) return NaN;
+  s = s.replace(/[€\s]/g, "");
+  const hasComma = s.includes(",");
+  const hasDot = s.includes(".");
+  if(hasComma && hasDot) s = s.replace(/\./g, "").replace(",", ".");
+  else if(hasComma && !hasDot) s = s.replace(",", ".");
+  else s = s.replace(/,/g, "");
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+function str(v){ return (v===null || v===undefined) ? "" : String(v); }
+function fmt(n, dec=2){
+  if(!isFinite(n)) return "—";
+  return n.toFixed(dec).replace(".", ",");
+}
+function esc(s){
+  return String(s).replace(/[&<>"']/g, m=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[m]));
+}
+function escAttr(s){
+  return String(s).replace(/"/g, "&quot;");
+}
+function normText(s){
+  return String(s||"")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g," ")
+    .replace(/[.,;:_/\\|()\-–—]/g,"")
+    .replace(/ä/g,"ae").replace(/ö/g,"oe").replace(/ü/g,"ue").replace(/ß/g,"ss");
+}
+function haversineKm(lat1, lon1, lat2, lon2){
+  const R = 6371;
+  const toRad = d => d * Math.PI/180;
+  const dLat = toRad(lat2-lat1);
+  const dLon = toRad(lon2-lon1);
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*(Math.sin(dLon/2)**2);
+  return 2*R*Math.asin(Math.sqrt(a));
+}
 </script>
 </body>
 </html>
