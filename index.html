@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <title>Verkaufs-Karte – Grundgerüst</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    :root{
+      --ui-bg:#ffffff; --ui-text:#0f172a; --ui-muted:#475569;
+      --ui-border:rgba(15,23,42,.12); --ui-soft:rgba(15,23,42,.05);
+      --ui-soft2:rgba(15,23,42,.08); --ui-shadow:0 12px 34px rgba(2,6,23,.12);
+
+      --inp-bg:#ffffff; --inp-text:#0f172a; --inp-border:rgba(15,23,42,.18);
+      --inp-ph:rgba(15,23,42,.45); --inp-focus:rgba(37,99,235,.45);
+
+      --btn-bg:rgba(15,23,42,.06); --btn-border:rgba(15,23,42,.14); --btn-text:#0f172a;
+      --btn-primary:#22c55e; --btn-primary-text:#052e16;
+
+      --cust-tri:#4c1d95;
+
+      --popup-bg:#ffffff; --popup-text:#0f172a; --popup-border:rgba(15,23,42,.12);
+      --pill-bg:rgba(15,23,42,.05); --pill-border:rgba(15,23,42,.12);
+
+      --highlight:#e11d48;
+      --highlight-ring:rgba(225,29,72,.22);
+    }
+
+    body.dark{
+      --ui-bg:#0b1220; --ui-text:#e5e7eb; --ui-muted:#a3adc2;
+      --ui-border:rgba(148,163,184,.18); --ui-soft:rgba(148,163,184,.10);
+      --ui-soft2:rgba(148,163,184,.14); --ui-shadow:0 12px 34px rgba(0,0,0,.35);
+
+      --inp-bg:#0f172a; --inp-text:#e5e7eb; --inp-border:rgba(148,163,184,.22);
+      --inp-ph:rgba(229,231,235,.55); --inp-focus:rgba(59,130,246,.55);
+
+      --btn-bg:rgba(148,163,184,.10); --btn-border:rgba(148,163,184,.22); --btn-text:#e5e7eb;
+      --popup-bg:#0f172a; --popup-text:#e5e7eb; --popup-border:rgba(148,163,184,.22);
+      --pill-bg:rgba(148,163,184,.10); --pill-border:rgba(148,163,184,.22);
+
+      --highlight:#fb7185;
+      --highlight-ring:rgba(251,113,133,.22);
+    }
+
+    html,body{
+      height:100%;
+      margin:0;
+      background:var(--ui-bg);
+      overscroll-behavior:none;
+      font:14px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+    }
+
+    #map{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      background:#d1d5db;
+    }
+
+    .topbar{
+      position:fixed;
+      top:0; left:0; right:0;
+      z-index:3000;
+      display:flex;
+      gap:10px;
+      align-items:flex-end;
+      flex-wrap:wrap;
+      padding:10px 12px;
+      border-radius:0 0 14px 14px;
+      background:var(--ui-bg);
+      border:1px solid var(--ui-border);
+      border-top:none;
+      box-shadow:var(--ui-shadow);
+      color:var(--ui-text);
+      backdrop-filter: blur(6px);
+    }
+
+    .brandBlock{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      align-items:flex-start;
+      margin-right:4px;
+    }
+
+    .brand{
+      font-weight:900;
+      white-space:nowrap;
+      line-height:1;
+    }
+
+    .brandBlock select{
+      height:30px;
+      padding:0 10px;
+      border-radius:10px;
+      border:1px solid var(--inp-border);
+      background:var(--inp-bg);
+      color:var(--inp-text);
+      outline:none;
+      font-weight:800;
+      min-width:150px;
+    }
+
+    .field{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+
+    .field label{
+      font-size:11px;
+      color:var(--ui-muted);
+      margin-left:2px;
+    }
+
+    .field input,.field select{
+      height:34px;
+      padding:0 10px;
+      border-radius:10px;
+      border:1px solid var(--inp-border);
+      background:var(--inp-bg);
+      color:var(--inp-text);
+      outline:none;
+      min-width:120px;
+    }
+
+    .field input::placeholder{color:var(--inp-ph);}
+    .field input:focus,.field select:focus{
+      border-color:var(--inp-focus);
+      box-shadow:0 0 0 3px rgba(37,99,235,.12);
+    }
+
+    .w240{min-width:240px;}
+    .w160{min-width:160px;}
+    .w140{min-width:140px;}
+
+    .btn{
+      height:34px;
+      padding:0 12px;
+      border-radius:10px;
+      border:1px solid var(--btn-border);
+      background:var(--btn-bg);
+      color:var(--btn-text);
+      cursor:pointer;
+      font-weight:800;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      user-select:none;
+    }
+
+    .btn.primary{
+      background:var(--btn-primary);
+      border-color:var(--btn-primary);
+      color:var(--btn-primary-text);
+    }
+
+    .btn:active{transform:translateY(1px);}
+
+    .pill{
+      align-self:center;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--pill-border);
+      background:var(--pill-bg);
+      white-space:nowrap;
+      font-weight:900;
+      color:var(--ui-text);
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+
+    #statusPill{margin-left:auto;}
+
+    .dot{
+      width:8px;
+      height:8px;
+      border-radius:50%;
+      background:#22c55e;
+      display:inline-block;
+    }
+
+    .ac{
+      position:absolute;
+      z-index:4000;
+      background:var(--ui-bg);
+      border:1px solid var(--ui-border);
+      border-radius:12px;
+      box-shadow:var(--ui-shadow);
+      overflow:hidden;
+      color:var(--ui-text);
+      max-height:260px;
+      overflow:auto;
+      min-width:320px;
+      display:none;
+    }
+
+    .ac .item{
+      padding:10px 12px;
+      border-bottom:1px solid var(--ui-border);
+      cursor:pointer;
+    }
+
+    .ac .item:last-child{border-bottom:none;}
+    .ac .item:hover{background:var(--ui-soft);}
+    .ac .name{font-weight:900;}
+    .ac .addr{font-size:12px;color:var(--ui-muted);margin-top:2px;}
+    .ac .tag{font-size:11px;color:var(--ui-muted);margin-top:4px;}
+
+    .panel{
+      position:absolute;
+      top:88px;
+      right:12px;
+      z-index:2500;
+      width:420px;
+      max-height:calc(100vh - 110px);
+      display:flex;
+      flex-direction:column;
+      background:var(--ui-bg);
+      border:1px solid var(--ui-border);
+      border-radius:16px;
+      box-shadow:var(--ui-shadow);
+      overflow:hidden;
+      color:var(--ui-text);
+    }
+
+    .panel.hidden{display:none;}
+
+    .panel-h{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:10px 12px;
+      background:var(--ui-soft);
+      border-bottom:1px solid var(--ui-border);
+    }
+
+    .panel-h .t{font-weight:900;}
+    .panel-h .x{
+      width:30px;
+      height:30px;
+      border-radius:10px;
+      border:1px solid var(--ui-border);
+      background:var(--ui-soft2);
+      color:var(--ui-text);
+      cursor:pointer;
+      font-weight:900;
+    }
+
+    .panel-b{
+      padding:10px 12px;
+      overflow:auto;
+    }
+
+    .kpis{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+      margin-bottom:10px;
+    }
+
+    .kpi{
+      border:1px solid var(--ui-border);
+      background:var(--ui-soft);
+      border-radius:14px;
+      padding:10px;
+    }
+
+    .kpi .h{font-size:12px;color:var(--ui-muted);}
+    .kpi .v{font-weight:900;font-size:16px;margin-top:2px;}
+
+    .small{font-size:12px;color:var(--ui-muted);}
+
+    .resultCard{
+      border:1px solid var(--ui-border);
+      background:var(--ui-soft);
+      border-radius:14px;
+      padding:10px;
+      margin-bottom:10px;
+      cursor:pointer;
+    }
+
+    .resultCard:hover{background:var(--ui-soft2);}
+    .resultTitle{font-weight:900;}
+    .resultSub{font-size:12px;color:var(--ui-muted);margin-top:3px;}
+
+    .drawerBackdrop{
+      position:fixed;
+      inset:0;
+      z-index:4500;
+      background:rgba(0,0,0,.38);
+      backdrop-filter: blur(2px);
+      display:none;
+    }
+
+    .drawer{
+      position:fixed;
+      top:0; bottom:0; left:0;
+      z-index:5000;
+      width:min(360px, 88vw);
+      background:var(--ui-bg);
+      border-right:1px solid var(--ui-border);
+      box-shadow:18px 0 40px rgba(0,0,0,.22);
+      transform:translateX(-102%);
+      transition:transform .22s ease;
+      display:flex;
+      flex-direction:column;
+      padding:12px;
+      gap:10px;
+      overflow:auto;
+      -webkit-overflow-scrolling:touch;
+    }
+
+    .drawer.open{transform:translateX(0);}
+
+    .drawerTop{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding-bottom:8px;
+      border-bottom:1px solid var(--ui-border);
+    }
+
+    .drawerTitle{font-weight:900;}
+
+    .drawerClose{
+      width:34px;
+      height:34px;
+      border-radius:12px;
+      border:1px solid var(--ui-border);
+      background:var(--ui-soft2);
+      color:var(--ui-text);
+      cursor:pointer;
+      font-weight:900;
+    }
+
+    .drawerGrid{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:10px;
+      padding-bottom:12px;
+    }
+
+    #btnMenu{display:none;}
+
+    .leaflet-popup-content-wrapper, .leaflet-popup-tip{
+      background:var(--popup-bg);
+      color:var(--popup-text);
+      border:1px solid var(--popup-border);
+      box-shadow:0 12px 34px rgba(2,6,23,.12);
+    }
+
+    @media (max-width: 760px){
+      .topbar{
+        gap:8px;
+        padding:8px 10px;
+        align-items:center;
+      }
+
+      .topbar .desktopOnly{display:none !important;}
+      #btnMenu{display:inline-flex;}
+      #statusPill{margin-left:0;}
+      .ac{min-width:min(92vw, 420px);}
+      .panel{
+        left:10px;
+        right:10px;
+        top:auto;
+        bottom:10px;
+        width:auto;
+        max-height:58vh;
+        border-radius:18px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="topbar" id="topbar">
+  <button class="btn" id="btnMenu" title="Menü">☰</button>
+
+  <div class="brandBlock">
+    <select id="searchType" title="Suche: Kunden oder Firmen">
+      <option value="kunden" selected>Kunden</option>
+      <option value="firmen">Firmen</option>
+    </select>
+    <div class="brand">Verkaufs-Karte</div>
+  </div>
+
+  <div class="field w240 desktopOnly">
+    <label>Suche</label>
+    <input id="searchInput" placeholder="Name / Ort …">
+  </div>
+
+  <div class="field w140 desktopOnly">
+    <label>Farbschema</label>
+    <select id="colorScheme">
+      <option value="standard">Standard</option>
+      <option value="pink">Pink</option>
+      <option value="pastel">Pastell</option>
+    </select>
+  </div>
+
+  <button class="btn" id="btnTheme" title="Hell/Dunkel umschalten">🌙</button>
+  <button class="btn primary" id="btnShowPanel">Ergebnisse</button>
+
+  <div class="pill" id="statusPill"><span class="dot"></span> Grundgerüst aktiv</div>
+</div>
+
+<div id="ac" class="ac"></div>
+
+<div id="drawerBackdrop" class="drawerBackdrop"></div>
+<aside id="drawer" class="drawer" aria-hidden="true">
+  <div class="drawerTop">
+    <div class="drawerTitle">Filter & Einstellungen</div>
+    <button class="drawerClose" id="drawerClose" title="Schließen">✕</button>
+  </div>
+
+  <div class="drawerGrid">
+    <div class="field">
+      <label>Suche (Typ)</label>
+      <select id="searchTypeMobile"></select>
+    </div>
+
+    <div class="field">
+      <label>Suche</label>
+      <input id="searchInputMobile" placeholder="Name / Ort …">
+    </div>
+
+    <div class="field">
+      <label>Farbschema</label>
+      <select id="colorSchemeMobile"></select>
+    </div>
+
+    <button class="btn primary" id="btnShowPanelMobile">Ergebnisse</button>
+  </div>
+
+  <div class="small">Das ist nur das Grundgerüst ohne Pellets-Logik.</div>
+</aside>
+
+<div id="panel" class="panel">
+  <div class="panel-h">
+    <div class="t">Ergebnisse</div>
+    <button id="closePanel" class="x" title="Schließen">✕</button>
+  </div>
+
+  <div class="panel-b">
+    <div class="kpis">
+      <div class="kpi">
+        <div class="h" id="kpiLabel">Auswahl</div>
+        <div class="v" id="kpiName">—</div>
+      </div>
+      <div class="kpi">
+        <div class="h">Treffer</div>
+        <div class="v" id="kpiCount">0</div>
+      </div>
+    </div>
+
+    <div class="small" style="margin-bottom:10px;">
+      Wähle oben <b>Kunden</b> oder <b>Firmen</b>, suche einen Eintrag an und klicke auf einen Marker.
+    </div>
+
+    <div id="results"></div>
+  </div>
+</div>
+
+<script>
+  const LS_THEME_KEY = "salesMap_theme_basic_v1";
+  const LS_COLOR_SCHEME_KEY = "salesMap_colorScheme_basic_v1";
+
+  let map;
+  let customerMarkers = [];
+  let firmMarkers = [];
+  let selectedCustomer = null;
+  let selectedFirm = null;
+  let isMobile = false;
+
+  const customers = [
+    { id:"C1", name:"Kunde Hamburg", address:"Hamburg", lat:53.5511, lon:9.9937 },
+    { id:"C2", name:"Kunde Hannover", address:"Hannover", lat:52.3759, lon:9.7320 },
+    { id:"C3", name:"Kunde Kassel", address:"Kassel", lat:51.3127, lon:9.4797 }
+  ];
+
+  const firms = [
+    { id:"F1", name:"Firma Bremen", address:"Bremen", lat:53.0793, lon:8.8017 },
+    { id:"F2", name:"Firma Dortmund", address:"Dortmund", lat:51.5136, lon:7.4653 },
+    { id:"F3", name:"Firma Leipzig", address:"Leipzig", lat:51.3397, lon:12.3731 }
+  ];
+
+  window.addEventListener("load", init);
+
+  function init(){
+    applyThemeFromLS();
+
+    map = L.map("map", { worldCopyJump:true }).setView([51.2, 10.4], 6);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    initUI();
+    initMobileUI();
+    applyResponsiveLayout();
+    window.addEventListener("resize", applyResponsiveLayout);
+
+    renderMarkers();
+    renderResults();
+  }
+
+  function initUI(){
+    const schemeSel = document.getElementById("colorScheme");
+    schemeSel.value = localStorage.getItem(LS_COLOR_SCHEME_KEY) || "standard";
+
+    schemeSel.addEventListener("change", ()=>{
+      localStorage.setItem(LS_COLOR_SCHEME_KEY, schemeSel.value);
+      syncMobileSelectValue("colorScheme", "colorSchemeMobile");
+      renderMarkers();
+    });
+
+    document.getElementById("searchType").addEventListener("change", ()=>{
+      selectedCustomer = null;
+      selectedFirm = null;
+      syncMobileSelectValue("searchType", "searchTypeMobile");
+      renderMarkers();
+      renderResults();
+      document.getElementById("searchInput").value = "";
+      document.getElementById("ac").style.display = "none";
+      document.getElementById("kpiLabel").textContent = getSearchType() === "kunden" ? "Kunde" : "Firma";
+      document.getElementById("kpiName").textContent = "—";
+    });
+
+    document.getElementById("btnTheme").addEventListener("click", ()=>{
+      document.body.classList.toggle("dark");
+      localStorage.setItem(LS_THEME_KEY, document.body.classList.contains("dark") ? "dark" : "light");
+      renderMarkers();
+    });
+
+    document.getElementById("btnShowPanel").addEventListener("click", ()=>{
+      document.getElementById("panel").classList.remove("hidden");
+    });
+
+    document.getElementById("closePanel").addEventListener("click", ()=>{
+      document.getElementById("panel").classList.add("hidden");
+    });
+
+    const input = document.getElementById("searchInput");
+    const ac = document.getElementById("ac");
+
+    function positionAC(){
+      const activeInput = document.activeElement === document.getElementById("searchInputMobile")
+        ? document.getElementById("searchInputMobile")
+        : input;
+
+      const r = activeInput.getBoundingClientRect();
+      ac.style.left = (r.left + window.scrollX) + "px";
+      ac.style.top = (r.bottom + window.scrollY + 8) + "px";
+      ac.style.minWidth = Math.max(280, r.width) + "px";
+    }
+
+    window.addEventListener("resize", positionAC);
+    window.addEventListener("scroll", positionAC, true);
+
+    input.addEventListener("focus", ()=>{
+      positionAC();
+      showSuggestions(input.value);
+    });
+
+    input.addEventListener("input", ()=>{
+      positionAC();
+      showSuggestions(input.value);
+    });
+
+    input.addEventListener("keydown", (e)=>{
+      if(e.key === "Escape") ac.style.display = "none";
+      if(e.key === "Enter"){
+        const match = bestMatch(input.value.trim().toLowerCase());
+        if(match){
+          selectEntity(match);
+          ac.style.display = "none";
+        }
+      }
+    });
+
+    document.addEventListener("click", (e)=>{
+      const mobileInput = document.getElementById("searchInputMobile");
+      if(ac.contains(e.target) || e.target === input || e.target === mobileInput) return;
+      ac.style.display = "none";
+    });
+  }
+
+  function initMobileUI(){
+    syncMobileSelect("searchType", "searchTypeMobile");
+    syncMobileSelect("colorScheme", "colorSchemeMobile");
+    syncMobileInput("searchInput", "searchInputMobile");
+
+    document.getElementById("btnMenu").addEventListener("click", toggleDrawer);
+    document.getElementById("drawerClose").addEventListener("click", closeDrawer);
+    document.getElementById("drawerBackdrop").addEventListener("click", closeDrawer);
+
+    document.getElementById("btnShowPanelMobile").addEventListener("click", ()=>{
+      document.getElementById("panel").classList.remove("hidden");
+      closeDrawer();
+    });
+
+    document.getElementById("searchTypeMobile").addEventListener("change", ()=>{
+      document.getElementById("searchType").dispatchEvent(new Event("change"));
+    });
+
+    document.getElementById("colorSchemeMobile").addEventListener("change", ()=>{
+      document.getElementById("colorScheme").dispatchEvent(new Event("change"));
+    });
+
+    document.getElementById("searchInputMobile").addEventListener("focus", ()=>{
+      const desktop = document.getElementById("searchInput");
+      desktop.value = document.getElementById("searchInputMobile").value;
+      desktop.dispatchEvent(new Event("focus"));
+    });
+
+    document.getElementById("searchInputMobile").addEventListener("input", ()=>{
+      const desktop = document.getElementById("searchInput");
+      desktop.value = document.getElementById("searchInputMobile").value;
+      desktop.dispatchEvent(new Event("input"));
+    });
+
+    document.getElementById("searchInputMobile").addEventListener("keydown", (e)=>{
+      const desktop = document.getElementById("searchInput");
+      desktop.value = document.getElementById("searchInputMobile").value;
+      desktop.dispatchEvent(new KeyboardEvent("keydown", { key:e.key }));
+    });
+  }
+
+  function applyResponsiveLayout(){
+    isMobile = window.matchMedia("(max-width: 760px)").matches;
+  }
+
+  function openDrawer(){
+    document.getElementById("drawer").classList.add("open");
+    document.getElementById("drawerBackdrop").style.display = "block";
+    document.getElementById("drawer").setAttribute("aria-hidden","false");
+  }
+
+  function closeDrawer(){
+    document.getElementById("drawer").classList.remove("open");
+    document.getElementById("drawerBackdrop").style.display = "none";
+    document.getElementById("drawer").setAttribute("aria-hidden","true");
+  }
+
+  function toggleDrawer(){
+    const open = document.getElementById("drawer").classList.contains("open");
+    open ? closeDrawer() : openDrawer();
+  }
+
+  function syncMobileSelect(masterId, mobileId){
+    const master = document.getElementById(masterId);
+    const mobile = document.getElementById(mobileId);
+
+    function copy(){
+      mobile.innerHTML = master.innerHTML;
+      mobile.value = master.value;
+    }
+
+    copy();
+
+    master.addEventListener("change", copy);
+    mobile.addEventListener("change", ()=>{
+      master.value = mobile.value;
+    });
+  }
+
+  function syncMobileSelectValue(masterId, mobileId){
+    const master = document.getElementById(masterId);
+    const mobile = document.getElementById(mobileId);
+    if(mobile) mobile.value = master.value;
+  }
+
+  function syncMobileInput(masterId, mobileId){
+    const master = document.getElementById(masterId);
+    const mobile = document.getElementById(mobileId);
+
+    mobile.value = master.value;
+
+    master.addEventListener("input", ()=>{
+      if(mobile.value !== master.value) mobile.value = master.value;
+    });
+
+    mobile.addEventListener("input", ()=>{
+      if(master.value !== mobile.value) master.value = mobile.value;
+    });
+  }
+
+  function getSearchType(){
+    return document.getElementById("searchType").value || "kunden";
+  }
+
+  function getActiveList(){
+    return getSearchType() === "kunden" ? customers : firms;
+  }
+
+  function showSuggestions(qRaw){
+    const q = String(qRaw || "").trim().toLowerCase();
+    const ac = document.getElementById("ac");
+    ac.innerHTML = "";
+
+    if(!q){
+      ac.style.display = "none";
+      return;
+    }
+
+    const list = getActiveList();
+    const starts = [];
+    const contains = [];
+
+    for(const x of list){
+      const name = (x.name || "").toLowerCase();
+      const addr = (x.address || "").toLowerCase();
+      if(name.startsWith(q) || addr.startsWith(q)) starts.push(x);
+      else if(name.includes(q) || addr.includes(q)) contains.push(x);
+    }
+
+    const out = [...starts, ...contains].slice(0, 12);
+    if(!out.length){
+      ac.style.display = "none";
+      return;
+    }
+
+    const tag = getSearchType() === "kunden" ? "Kunde" : "Firma";
+
+    for(const x of out){
+      const div = document.createElement("div");
+      div.className = "item";
+      div.innerHTML = `
+        <div class="name">${esc(x.name)}</div>
+        <div class="addr">${esc(x.address)}</div>
+        <div class="tag">${tag}</div>
+      `;
+      div.addEventListener("click", ()=>{
+        selectEntity(x);
+        ac.style.display = "none";
+        closeDrawer();
+      });
+      ac.appendChild(div);
+    }
+
+    ac.style.display = "block";
+  }
+
+  function bestMatch(q){
+    if(!q) return null;
+    const list = getActiveList();
+    const starts = list.filter(x =>
+      (x.name || "").toLowerCase().startsWith(q) ||
+      (x.address || "").toLowerCase().startsWith(q)
+    );
+    if(starts.length) return starts[0];
+
+    const contains = list.filter(x =>
+      (x.name || "").toLowerCase().includes(q) ||
+      (x.address || "").toLowerCase().includes(q)
+    );
+    return contains[0] || null;
+  }
+
+  function selectEntity(entity){
+    if(getSearchType() === "kunden"){
+      selectedCustomer = entity;
+      selectedFirm = null;
+    }else{
+      selectedFirm = entity;
+      selectedCustomer = null;
+    }
+
+    document.getElementById("kpiLabel").textContent = getSearchType() === "kunden" ? "Kunde" : "Firma";
+    document.getElementById("kpiName").textContent = entity.name;
+
+    map.setView([entity.lat, entity.lon], 8, { animate:true });
+    renderMarkers();
+    renderResults();
+    document.getElementById("panel").classList.remove("hidden");
+  }
+
+  function renderMarkers(){
+    customerMarkers.forEach(m => map.removeLayer(m));
+    firmMarkers.forEach(m => map.removeLayer(m));
+    customerMarkers = [];
+    firmMarkers = [];
+
+    const outline = document.body.classList.contains("dark")
+      ? "rgba(229,231,235,.9)"
+      : "rgba(15,23,42,.9)";
+
+    const highlight = getComputedStyle(document.body).getPropertyValue("--highlight").trim() || "#e11d48";
+    const highlightRing = getComputedStyle(document.body).getPropertyValue("--highlight-ring").trim() || "rgba(225,29,72,.22)";
+
+    customers.forEach(c=>{
+      const isSelected = selectedCustomer && selectedCustomer.id === c.id;
+
+      const m = L.marker([c.lat, c.lon], { icon: customerTriangleIcon(isSelected) }).addTo(map);
+      m.on("click", ()=>selectEntity(c));
+
+      if(isSelected){
+        const ring = L.circleMarker([c.lat, c.lon], {
+          radius:16,
+          color:highlight,
+          weight:3,
+          fillColor:highlightRing,
+          fillOpacity:0.25
+        }).addTo(map);
+        customerMarkers.push(ring);
+      }
+
+      m.bindPopup(`<b>${esc(c.name)}</b><br>${esc(c.address)}<br><small>Kunde</small>`);
+      customerMarkers.push(m);
+    });
+
+    firms.forEach(f=>{
+      const isSelected = selectedFirm && selectedFirm.id === f.id;
+
+      const m = L.circleMarker([f.lat, f.lon], {
+        radius:isSelected ? 10 : 7,
+        color:isSelected ? highlight : outline,
+        weight:isSelected ? 4 : 2,
+        fillColor:firmColor(),
+        fillOpacity:.9
+      }).addTo(map);
+
+      m.on("click", ()=>selectEntity(f));
+      m.bindPopup(`<b>${esc(f.name)}</b><br>${esc(f.address)}<br><small>Firma</small>`);
+      firmMarkers.push(m);
+
+      if(isSelected){
+        const ring = L.circleMarker([f.lat, f.lon], {
+          radius:18,
+          color:highlight,
+          weight:2,
+          fillColor:highlightRing,
+          fillOpacity:0.18
+        }).addTo(map);
+        firmMarkers.push(ring);
+      }
+    });
+  }
+
+  function renderResults(){
+    const box = document.getElementById("results");
+    const mode = getSearchType();
+    const list = mode === "kunden" ? customers : firms;
+
+    document.getElementById("kpiCount").textContent = String(list.length);
+
+    box.innerHTML = list.map(item => `
+      <div class="resultCard" data-id="${item.id}">
+        <div class="resultTitle">${esc(item.name)}</div>
+        <div class="resultSub">${esc(item.address)} · ${mode === "kunden" ? "Kunde" : "Firma"}</div>
+      </div>
+    `).join("");
+
+    box.querySelectorAll(".resultCard").forEach(card=>{
+      card.addEventListener("click", ()=>{
+        const id = card.dataset.id;
+        const entity = list.find(x => x.id === id);
+        if(entity) selectEntity(entity);
+      });
+    });
+  }
+
+  function customerTriangleIcon(selected=false){
+    const color = selected ? "var(--highlight)" : "var(--cust-tri)";
+    const size = selected ? 24 : 18;
+    const shadow = selected
+      ? "drop-shadow(0 0 0 4px var(--highlight-ring)) drop-shadow(0 4px 10px rgba(2,6,23,.28))"
+      : "drop-shadow(0 3px 6px rgba(2,6,23,.25))";
+
+    return L.divIcon({
+      html:`<div style="
+        width:0;height:0;
+        border-left:${Math.round(size*0.55)}px solid transparent;
+        border-right:${Math.round(size*0.55)}px solid transparent;
+        border-bottom:${size}px solid ${color};
+        filter:${shadow};
+      "></div>`,
+      className:"",
+      iconSize:[size+6,size+6],
+      iconAnchor:[(size+6)/2,size+2]
+    });
+  }
+
+  function firmColor(){
+    const scheme = document.getElementById("colorScheme")?.value || "standard";
+    const palettes = {
+      standard:"#2563eb",
+      pink:"#e11d48",
+      pastel:"#93c5fd"
+    };
+    return palettes[scheme] || "#2563eb";
+  }
+
+  function applyThemeFromLS(){
+    const t = localStorage.getItem(LS_THEME_KEY) || "light";
+    if(t === "dark") document.body.classList.add("dark");
+  }
+
+  function esc(s){
+    return String(s).replace(/[&<>"']/g, m => ({
+      "&":"&amp;",
+      "<":"&lt;",
+      ">":"&gt;",
+      '"':"&quot;",
+      "'":"&#039;"
+    }[m]));
+  }
+</script>
+</body>
+</html>
