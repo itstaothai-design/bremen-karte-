@@ -110,7 +110,7 @@
 
     .panel{
       position:absolute; top:88px; right:12px; z-index:2500;
-      width:760px; max-height:calc(100vh - 110px);
+      width:780px; max-height:calc(100vh - 110px);
       display:flex; flex-direction:column;
       background:var(--ui-bg);
       border:1px solid var(--ui-border);
@@ -364,7 +364,7 @@
       <div class="kpi">
         <div class="h">Route</div>
         <div class="v" id="kpiRoute">—</div>
-        <div class="small">Klick auf Zeile lädt echte Strecke</div>
+        <div class="small">Klick auf Zeile lädt Route</div>
       </div>
     </div>
 
@@ -393,8 +393,7 @@ function loadLS(key, fallback){
 }
 
 const CONFIG = {
-  spreadsheetId: "1PqhRHsa_QDn8DZ1NuNuBfDgJA-paes68_EZ-KZ7kxGs",
-  geocodeDelayMs: 1100
+  spreadsheetId: "1PqhRHsa_QDn8DZ1NuNuBfDgJA-paes68_EZ-KZ7kxGs"
 };
 
 const URLS = {
@@ -402,9 +401,10 @@ const URLS = {
   avv: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=avv`
 };
 
-const LS_THEME_KEY = "wasteMap_theme_v2";
-const LS_PANEL_POS_KEY = "wasteMap_panelPos_v2";
-const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v2";
+const LS_THEME_KEY = "wasteMap_theme_v3";
+const LS_PANEL_POS_KEY = "wasteMap_panelPos_v3";
+const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v3";
+const LS_ROUTE_CACHE = "wasteMap_routeCache_v1";
 
 let map;
 let isMobile = false;
@@ -422,6 +422,7 @@ let currentFocusedRow = null;
 let stationMarkers = [];
 
 let supplierGeoCache = loadLS(LS_SUPPLIER_CACHE, {});
+let routeCache = loadLS(LS_ROUTE_CACHE, {});
 
 window.addEventListener("load", ()=>init().catch(err=>{
   console.error("INIT ERROR:", err);
@@ -697,7 +698,7 @@ async function loadLadestellen(){
     preisBasis: toNum(r["preis_basis"]),
     avv: str(r["avv_erlaubt"]).trim(),
     behandlung: str(r["behandlung"]).trim(),
-    co2Mod: str(r["co2_mod"]).trim().toLowerCase(),
+    co2Mod: normText(str(r["co2_mod"]).trim()),
     raw: r
   })).filter(x =>
     x.ladestelle &&
@@ -761,7 +762,7 @@ function renderStations(results=null){
     const popupText = `
       <b>${esc(x.firma || "—")}</b><br>
       ${esc(x.ladestelle)}<br>
-      <small>AVV: ${esc(x.avv)} · ${esc(x.behandlung)} · Basis: ${fmt(x.preisBasis)} €/t</small>
+      <small>AVV: ${esc(x.avv)} · ${esc(x.behandlung)} · Basis: ${fmt(x.preisBasis)} €/t · CO2_mod: ${esc(x.co2Mod || "—")}</small>
     `;
 
     m.bindPopup(popupText);
@@ -785,9 +786,7 @@ async function geocodeSupplierLocation(query){
   const cacheKey = normText(clean);
   if(supplierGeoCache[cacheKey]) return supplierGeoCache[cacheKey];
 
-  const isPlz = /^[0-9]{4,5}$/.test(clean);
-  const q = isPlz ? `${clean}, Deutschland` : `${clean}, Deutschland`;
-
+  const q = `${clean}, Deutschland`;
   const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=de&q=" + encodeURIComponent(q);
 
   try{
@@ -852,6 +851,114 @@ function setStartPoint(geo, query){
   document.getElementById("kpiStartSub").textContent = geo.label || "—";
 }
 
+function getCo2Calc(preisBasis, co2Raw, co2Mod){
+  const mode = normText(co2Mod);
+  const co2Plus = isFinite(co2Raw) ? Math.abs(co2Raw) : 0;
+
+  if(mode === "add"){
+    return {
+      co2Anteil: co2Plus,
+      preisNachCo2: preisBasis + co2Plus,
+      co2ModeLabel: "add"
+    };
+  }
+
+  if(mode === "incl" || mode === "included"){
+    return {
+      co2Anteil: 0,
+      preisNachCo2: preisBasis,
+      co2ModeLabel: "incl"
+    };
+  }
+
+  return {
+    co2Anteil: 0,
+    preisNachCo2: preisBasis,
+    co2ModeLabel: mode || "—"
+  };
+}
+
+function calcRowValues(base, usedKm, inputs){
+  const qtyT = inputs.qtyT;
+  const freightPerKm = inputs.freightPerKm;
+  const calcMode = inputs.calcMode;
+  const targetValue = inputs.targetValue;
+
+  const freightPerT = (usedKm * freightPerKm / qtyT);
+  const ekProT = base.preisNachCo2 + freightPerT;
+  const gesamt = ekProT * qtyT;
+
+  const targetEk = calcMode === "targetEk" ? targetValue : NaN;
+  const targetMargin = calcMode === "targetMargin" ? targetValue : NaN;
+  const delta = isFinite(targetEk) ? (targetEk - ekProT) : NaN;
+  const mindestEk = isFinite(targetMargin) ? (base.preisNachCo2 + freightPerT + targetMargin) : NaN;
+  const displayValue = calcMode === "targetMargin" ? mindestEk : ekProT;
+
+  return {
+    ...base,
+    calcKm: usedKm,
+    freightPerT,
+    ekProT,
+    gesamt,
+    targetEk,
+    targetMargin,
+    delta,
+    mindestEk,
+    displayValue
+  };
+}
+
+function getRouteCacheKey(from, to){
+  return `${from.lat.toFixed(5)},${from.lon.toFixed(5)}__${to.lat.toFixed(5)},${to.lon.toFixed(5)}`;
+}
+
+async function getRouteData(from, to){
+  const key = getRouteCacheKey(from, to);
+  if(routeCache[key]) return routeCache[key];
+
+  try{
+    const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if(data && data.routes && data.routes[0]){
+      const r = data.routes[0];
+      const result = {
+        km: r.distance / 1000,
+        minutes: r.duration / 60,
+        geometry: r.geometry
+      };
+      routeCache[key] = result;
+      saveLS(LS_ROUTE_CACHE, routeCache);
+      return result;
+    }
+  }catch(e){
+    console.error("Routing Fehler:", e);
+  }
+  return null;
+}
+
+async function enrichResultsWithRouteKm(results, origin, inputs){
+  for(let i=0;i<results.length;i++){
+    const row = results[i];
+    setLoadStatus(`Routen werden berechnet … ${i+1}/${results.length}`);
+
+    const route = await getRouteData(origin, row.entity);
+    if(route && isFinite(route.km)){
+      const updated = calcRowValues(row, route.km, inputs);
+      updated.routeMinutes = route.minutes;
+      updated.routeGeometry = route.geometry || null;
+      results[i] = updated;
+    }else{
+      const fallback = calcRowValues(row, row.kmAir, inputs);
+      fallback.routeMinutes = null;
+      fallback.routeGeometry = null;
+      results[i] = fallback;
+    }
+  }
+  return results;
+}
+
 async function calculate(){
   clearRoute();
   hideDetail();
@@ -865,7 +972,7 @@ async function calculate(){
   out.innerHTML = "";
 
   const inputs = getInputs();
-  const { supplierQuery, behandlung, avv, qtyT, freightPerKm, calcMode, targetValue } = inputs;
+  const { supplierQuery, behandlung, avv, qtyT, calcMode, targetValue } = inputs;
 
   document.getElementById("kpiQty").textContent = `Menge: ${fmt(qtyT,1)} t`;
   document.getElementById("kpiRoute").textContent = "—";
@@ -885,7 +992,6 @@ async function calculate(){
     document.getElementById("kpiCount").textContent = "—";
     return;
   }
-
   if(calcMode === "targetMargin" && !isFinite(targetValue)){
     out.innerHTML = `<div class="small">Bitte einen Ziel-Rohertrag eingeben.</div>`;
     document.getElementById("kpiCount").textContent = "—";
@@ -906,74 +1012,68 @@ async function calculate(){
 
   const avvInfo = avvMap.get(normText(avv));
   const co2Raw = avvInfo && isFinite(avvInfo.co2) ? avvInfo.co2 : NaN;
-  const co2ValuePlus = isFinite(co2Raw) ? Math.abs(co2Raw) : 0;
 
-  const results = [];
+  let results = [];
 
   for(const x of ladestellen){
     if(normText(x.behandlung) !== normText(behandlung)) continue;
     if(normText(x.avv) !== normText(avv)) continue;
 
     const kmAir = haversineKm(startPoint.lat, startPoint.lon, x.lat, x.lon);
-
     const preisBasis = isFinite(x.preisBasis) ? x.preisBasis : 0;
-    const co2Anteil = co2ValuePlus;
-    const preisNachCo2 = preisBasis + co2Anteil;
 
-    const freightPerT = (kmAir * freightPerKm / qtyT);
-    const ekProT = preisNachCo2 + freightPerT;
-    const gesamt = ekProT * qtyT;
+    const co2Calc = getCo2Calc(preisBasis, co2Raw, x.co2Mod);
 
-    const targetEk = calcMode === "targetEk" ? targetValue : NaN;
-    const targetMargin = calcMode === "targetMargin" ? targetValue : NaN;
-
-    const delta = isFinite(targetEk) ? (targetEk - ekProT) : NaN;
-    const mindestEk = isFinite(targetMargin) ? (preisNachCo2 + freightPerT + targetMargin) : NaN;
-    const displayValue = calcMode === "targetMargin" ? mindestEk : ekProT;
-
-    results.push({
+    const base = {
       entity: x,
       kmAir,
-      calcKm: kmAir,
       preisBasis,
       co2Raw,
-      co2Anteil,
-      preisNachCo2,
-      freightPerT,
-      ekProT,
-      gesamt,
-      delta,
-      calcMode,
-      targetEk,
-      targetMargin,
-      mindestEk,
-      displayValue
-    });
+      co2Mod: co2Calc.co2ModeLabel,
+      co2Anteil: co2Calc.co2Anteil,
+      preisNachCo2: co2Calc.preisNachCo2,
+      routeMinutes: null,
+      routeGeometry: null
+    };
+
+    results.push(calcRowValues(base, kmAir, inputs));
   }
-
-  results.sort((a,b)=>a.displayValue - b.displayValue);
-  lastResults = results;
-  document.getElementById("kpiCount").textContent = String(results.length);
-
-  renderStations(results);
-
-  if(results.length){
-    const bounds = L.latLngBounds(results.map(r=>[r.entity.lat, r.entity.lon]));
-    bounds.extend([startPoint.lat, startPoint.lon]);
-    map.fitBounds(bounds, {padding:[35,35]});
-  }else{
-    map.setView([startPoint.lat, startPoint.lon], 8, {animate:true});
-  }
-
-  setLoadStatus(`✅ Treffer ${results.length}`);
 
   if(!results.length){
+    lastResults = [];
+    document.getElementById("kpiCount").textContent = "0";
+    renderStations([]);
     out.innerHTML = `<div class="small">Keine passenden Ladestellen gefunden.</div>`;
+    setLoadStatus("✅ Treffer 0");
     return;
   }
 
+  document.getElementById("kpiCount").textContent = String(results.length);
+  renderStations(results);
+
+  const bounds = L.latLngBounds(results.map(r=>[r.entity.lat, r.entity.lon]));
+  bounds.extend([startPoint.lat, startPoint.lon]);
+  map.fitBounds(bounds, {padding:[35,35]});
+
+  results = await enrichResultsWithRouteKm(results, startPoint, inputs);
+  results.sort((a,b)=>a.displayValue - b.displayValue);
+
+  lastResults = results;
+  document.getElementById("kpiCount").textContent = String(results.length);
+  renderStations(results);
+  setLoadStatus(`✅ Treffer ${results.length}`);
+
+  renderResultsTable(results, inputs);
+}
+
+function renderResultsTable(results, inputs){
+  const out = document.getElementById("results");
+  out.innerHTML = "";
+
+  const calcMode = inputs.calcMode;
+  const qtyT = inputs.qtyT;
   const modeHeader = calcMode === "targetMargin" ? "Mindest-EK / t" : "EK / t";
-  const infoHeader = calcMode === "targetMargin" ? "Rohertrag" : (isFinite(targetValue) ? "Abweichung" : "Info");
+  const infoHeader = calcMode === "targetMargin" ? "Rohertrag" : (isFinite(inputs.targetValue) ? "Abweichung" : "Info");
 
   const table = document.createElement("table");
   table.innerHTML = `
@@ -992,7 +1092,7 @@ async function calculate(){
 
   for(const row of results){
     const valueLine = calcMode === "targetMargin"
-      ? `<b>${fmt(row.mindestEk)} €/t</b><br><span class="small">EK nach CO2 + Fracht + Rohertrag</span>`
+      ? `<b>${fmt(row.mindestEk)} €/t</b><br><span class="small">Preis_Basis + CO2 + Fracht + Rohertrag</span>`
       : `<b>${fmt(row.ekProT)} €/t</b><br><span class="small">${fmt(row.gesamt)} € für ${fmt(qtyT,1)} t</span>`;
 
     const tr = document.createElement("tr");
@@ -1000,15 +1100,17 @@ async function calculate(){
       <td>
         <b>${esc(row.entity.firma || "—")}</b><br>
         <span class="small">${esc(row.entity.ladestelle)}</span><br>
-        <span class="small">AVV ${esc(row.entity.avv)} · ${esc(row.entity.behandlung)} · Basis ${fmt(row.preisBasis)} €/t</span>
+        <span class="small">AVV ${esc(row.entity.avv)} · ${esc(row.entity.behandlung)} · Basis ${fmt(row.preisBasis)} €/t · CO2_mod ${esc(row.co2Mod)}</span>
       </td>
       <td>${fmt(row.calcKm,0)}</td>
       <td>${valueLine}</td>
       <td>${makeBadge(row)}</td>
     `;
+
     tr.addEventListener("click", async ()=>{
       await showRouteDetails(startPoint, row.entity, row);
     });
+
     tbody.appendChild(tr);
   }
 
@@ -1016,7 +1118,7 @@ async function calculate(){
 }
 
 function makeBadge(row){
-  if(row.calcMode === "targetMargin"){
+  if(row.calcMode === "targetMargin" || row.targetMargin === row.targetMargin){
     if(!isFinite(row.targetMargin)) return `<span class="badge">—</span>`;
     return `<span class="badge good">Rohertrag ${fmt(row.targetMargin)} €/t</span>`;
   }
@@ -1030,7 +1132,7 @@ function makeBadge(row){
 }
 
 function getResultColor(row){
-  if(row.calcMode === "targetMargin"){
+  if(row.targetMargin === row.targetMargin && isFinite(row.targetMargin)){
     return "#2563eb";
   }
   if(!isFinite(row.targetEk) || !isFinite(row.delta)) return "#2563eb";
@@ -1039,87 +1141,54 @@ function getResultColor(row){
   return "#dc2626";
 }
 
-async function getRouteData(from, to){
-  try{
-    const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=full&geometries=geojson`;
-    const res = await fetch(url);
-    const data = await res.json();
-
-    if(data && data.routes && data.routes[0]){
-      const r = data.routes[0];
-      return {
-        km: r.distance / 1000,
-        minutes: r.duration / 60,
-        geometry: r.geometry
-      };
-    }
-  }catch(e){
-    console.error("Routing Fehler:", e);
-  }
-  return null;
-}
-
 async function showRouteDetails(origin, target, baseRow){
   clearRoute();
   document.getElementById("kpiRoute").textContent = "Route lädt …";
 
-  const route = await getRouteData(origin, target);
-
   let usedKm = baseRow.calcKm;
-  let minutes = null;
+  let minutes = baseRow.routeMinutes ?? null;
+  let geometry = baseRow.routeGeometry ?? null;
 
+  const route = await getRouteData(origin, target);
   if(route && isFinite(route.km)){
     usedKm = route.km;
     minutes = route.minutes;
-
-    if(route.geometry && route.geometry.coordinates){
-      const latlngs = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-      routeLayer = L.polyline(latlngs, {
-        color: getComputedStyle(document.body).getPropertyValue("--route").trim() || "#2563eb",
-        weight: 5,
-        opacity: 0.9
-      }).addTo(map);
-
-      try{
-        map.fitBounds(routeLayer.getBounds(), {padding:[30,30]});
-      }catch(e){}
-    }
+    geometry = route.geometry || null;
   }
 
-  const inputs = getInputs();
-  const qtyT = inputs.qtyT;
-  const freightPerKm = inputs.freightPerKm;
-  const calcMode = inputs.calcMode;
-  const targetValue = inputs.targetValue;
+  if(geometry && geometry.coordinates){
+    const latlngs = geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+    routeLayer = L.polyline(latlngs, {
+      color: getComputedStyle(document.body).getPropertyValue("--route").trim() || "#2563eb",
+      weight: 5,
+      opacity: 0.9
+    }).addTo(map);
 
-  const freightPerT = (usedKm * freightPerKm / qtyT);
-  const ekProT = baseRow.preisNachCo2 + freightPerT;
-  const gesamt = ekProT * qtyT;
-  const targetEk = calcMode === "targetEk" ? targetValue : NaN;
-  const targetMargin = calcMode === "targetMargin" ? targetValue : NaN;
-  const delta = isFinite(targetEk) ? (targetEk - ekProT) : NaN;
-  const mindestEk = isFinite(targetMargin) ? (baseRow.preisNachCo2 + freightPerT + targetMargin) : NaN;
+    try{
+      map.fitBounds(routeLayer.getBounds(), {padding:[30,30]});
+    }catch(e){}
+  }
+
+  const recalculated = calcRowValues(baseRow, usedKm, getInputs());
+  recalculated.routeMinutes = minutes;
+  recalculated.routeGeometry = geometry;
 
   document.getElementById("kpiRoute").textContent =
     `${fmt(usedKm,0)} km${isFinite(minutes) ? ` · ${fmt(minutes,0)} min` : ""}`;
 
   currentFocusedRow = {
+    ...recalculated,
     entity: target,
     routeKm: usedKm,
-    durationMin: minutes,
-    preisBasis: baseRow.preisBasis,
-    co2Raw: baseRow.co2Raw,
-    co2Anteil: baseRow.co2Anteil,
-    preisNachCo2: baseRow.preisNachCo2,
-    freightPerT,
-    ekProT,
-    gesamt,
-    delta,
-    calcMode,
-    targetEk,
-    targetMargin,
-    mindestEk
+    durationMin: minutes
   };
+
+  const idx = lastResults.findIndex(r => r.entity.id === target.id);
+  if(idx >= 0){
+    lastResults[idx] = { ...recalculated };
+    lastResults.sort((a,b)=>a.displayValue - b.displayValue);
+    renderResultsTable(lastResults, getInputs());
+  }
 
   renderStations(lastResults);
   showDetail(currentFocusedRow);
@@ -1133,16 +1202,17 @@ function showDetail(row){
 
   title.textContent = `Details – ${row.entity.firma || "Ladestelle"}`;
 
-  const modeText = row.calcMode === "targetMargin" ? "Ziel-Rohertrag" : "Ziel-EK";
-  const modeValueText = row.calcMode === "targetMargin"
-    ? (isFinite(row.targetMargin) ? `${fmt(row.targetMargin)} €/t` : "—")
+  const isMarginMode = isFinite(row.targetMargin);
+  const modeText = isMarginMode ? "Ziel-Rohertrag" : "Ziel-EK";
+  const modeValueText = isMarginMode
+    ? `${fmt(row.targetMargin)} €/t`
     : (isFinite(row.targetEk) ? `${fmt(row.targetEk)} €/t` : "—");
 
-  const resultLineA = row.calcMode === "targetMargin"
-    ? `<div class="kv"><span class="k">Ziel-Rohertrag</span><span class="v">${isFinite(row.targetMargin) ? fmt(row.targetMargin)+" €/t" : "—"}</span></div>`
+  const resultLineA = isMarginMode
+    ? `<div class="kv"><span class="k">Ziel-Rohertrag</span><span class="v">${fmt(row.targetMargin)} €/t</span></div>`
     : `<div class="kv"><span class="k">Ziel-EK</span><span class="v">${isFinite(row.targetEk) ? fmt(row.targetEk)+" €/t" : "—"}</span></div>`;
 
-  const resultLineB = row.calcMode === "targetMargin"
+  const resultLineB = isMarginMode
     ? `<div class="kv"><span class="k">Mindest-EK / t</span><span class="v">${isFinite(row.mindestEk) ? fmt(row.mindestEk)+" €/t" : "—"}</span></div>`
     : `<div class="kv"><span class="k">Abweichung</span><span class="v">${isFinite(row.delta) ? fmt(row.delta)+" €/t" : "—"}</span></div>`;
 
@@ -1160,22 +1230,25 @@ function showDetail(row){
     <div class="kv"><span class="k">Modus-Wert</span><span class="v">${modeValueText}</span></div>
 
     <div class="kv"><span class="k">Preis_Basis</span><span class="v">${fmt(row.preisBasis)} €/t</span></div>
-    <div class="kv"><span class="k">CO2 aus AVV</span><span class="v">${isFinite(row.co2Anteil) ? fmt(row.co2Anteil)+" €/t" : "—"}</span></div>
+    <div class="kv"><span class="k">CO2_mod</span><span class="v">${esc(row.co2Mod || "—")}</span></div>
 
+    <div class="kv"><span class="k">CO2 Anteil extra</span><span class="v">${fmt(row.co2Anteil)} €/t</span></div>
     <div class="kv"><span class="k">Preis nach CO2</span><span class="v">${fmt(row.preisNachCo2)} €/t</span></div>
-    <div class="kv"><span class="k">Fracht</span><span class="v">${fmt(row.freightPerT)} €/t</span></div>
 
+    <div class="kv"><span class="k">Fracht</span><span class="v">${fmt(row.freightPerT)} €/t</span></div>
     <div class="kv"><span class="k">EK / t</span><span class="v">${fmt(row.ekProT)} €/t</span></div>
-    <div class="kv"><span class="k">Gesamt</span><span class="v">${fmt(row.gesamt)} €</span></div>
 
     <div class="kv"><span class="k">Menge</span><span class="v">${fmt(qtyT,1)} t</span></div>
-    <div class="kv"><span class="k">Routing</span><span class="v">${isFinite(row.durationMin) ? "echte Strecke" : "Luftlinie-Fallback"}</span></div>
+    <div class="kv"><span class="k">Gesamt</span><span class="v">${fmt(row.gesamt)} €</span></div>
 
     ${resultLineA}
     ${resultLineB}
 
-    <div class="kv"><span class="k">Formel</span><span class="v">${row.calcMode === "targetMargin" ? "Preis_Basis + CO2 + Fracht + Rohertrag" : "Preis_Basis + CO2 + Fracht"}</span></div>
+    <div class="kv"><span class="k">Formel</span><span class="v">${isMarginMode ? "Preis_Basis + CO2 + Fracht + Rohertrag" : "Preis_Basis + CO2 + Fracht"}</span></div>
+    <div class="kv"><span class="k">Routing</span><span class="v">${isFinite(row.durationMin) ? "echte Strecke" : "Luftlinie-Fallback"}</span></div>
+
     <div class="kv"><span class="k">Koordinaten</span><span class="v">${fmt(row.entity.lat,5)}, ${fmt(row.entity.lon,5)}</span></div>
+    <div class="kv"><span class="k">Hinweis</span><span class="v">${row.co2Mod === "incl" ? "CO2 bereits in Preis_Basis enthalten" : (row.co2Mod === "add" ? "CO2 wird aufgeschlagen" : "kein zusätzlicher CO2-Aufschlag")}</span></div>
   `;
 
   box.style.display = "block";
