@@ -110,7 +110,7 @@
 
     .panel{
       position:absolute; top:88px; right:12px; z-index:2500;
-      width:680px; max-height:calc(100vh - 110px);
+      width:760px; max-height:calc(100vh - 110px);
       display:flex; flex-direction:column;
       background:var(--ui-bg);
       border:1px solid var(--ui-border);
@@ -229,6 +229,8 @@
       .topbar .desktopOnly{display:none !important;}
       #btnMenu{display:inline-flex;}
       #loadStatus{margin-left:0;}
+      .kpis{grid-template-columns:1fr;}
+      .detail-grid{grid-template-columns:1fr;}
     }
   </style>
 </head>
@@ -243,9 +245,9 @@
     <div class="brand">Entsorgungs-Karte</div>
   </div>
 
-  <div class="field w140 desktopOnly">
-    <label>PLZ Lieferant</label>
-    <input id="supplierPlz" placeholder="z. B. 28195">
+  <div class="field w240 desktopOnly">
+    <label>PLZ oder Stadt Lieferant</label>
+    <input id="supplierQuery" placeholder="z. B. 28195 oder Bremen">
   </div>
 
   <div class="field w180 desktopOnly">
@@ -274,14 +276,17 @@
     <input id="freightPerKm" type="number" step="0.01" value="1.85">
   </div>
 
-  <div class="field w120 desktopOnly">
-    <label>Faktor</label>
-    <input id="factor" type="number" step="0.01" value="1.05" min="0" max="10">
+  <div class="field w160 desktopOnly">
+    <label>Rechenmodus</label>
+    <select id="calcMode">
+      <option value="targetEk">Ziel-EK</option>
+      <option value="targetMargin">Ziel-Rohertrag</option>
+    </select>
   </div>
 
-  <div class="field w120 desktopOnly">
-    <label>Ziel-EK €/t</label>
-    <input id="targetEk" type="number" step="0.01" placeholder="optional">
+  <div class="field w160 desktopOnly">
+    <label id="targetValueLabel">Ziel-EK €/t</label>
+    <input id="targetValue" type="number" step="0.01" placeholder="optional">
   </div>
 
   <button class="btn" id="btnTheme" title="Hell/Dunkel umschalten">🌙</button>
@@ -300,8 +305,8 @@
 
   <div class="drawerGrid">
     <div class="field">
-      <label>PLZ Lieferant</label>
-      <input id="supplierPlzMobile" placeholder="z. B. 28195">
+      <label>PLZ oder Stadt Lieferant</label>
+      <input id="supplierQueryMobile" placeholder="z. B. 28195 oder Bremen">
     </div>
 
     <div class="field">
@@ -325,13 +330,13 @@
     </div>
 
     <div class="field">
-      <label>Faktor</label>
-      <input id="factorMobile" type="number" step="0.01" value="1.05" min="0" max="10">
+      <label>Rechenmodus</label>
+      <select id="calcModeMobile"></select>
     </div>
 
     <div class="field">
-      <label>Ziel-EK €/t</label>
-      <input id="targetEkMobile" type="number" step="0.01" placeholder="optional">
+      <label id="targetValueLabelMobile">Ziel-EK €/t</label>
+      <input id="targetValueMobile" type="number" step="0.01" placeholder="optional">
     </div>
 
     <button class="btn primary" id="btnCalcMobile">Berechnen</button>
@@ -349,7 +354,7 @@
       <div class="kpi">
         <div class="h">Startpunkt</div>
         <div class="v" id="kpiStart">—</div>
-        <div class="small" id="kpiStartSub">PLZ Lieferant</div>
+        <div class="small" id="kpiStartSub">PLZ oder Stadt Lieferant</div>
       </div>
       <div class="kpi">
         <div class="h">Treffer</div>
@@ -369,7 +374,7 @@
     </div>
 
     <div class="small" style="margin:6px 0 10px 0">
-      PLZ Lieferant eingeben → Behandlung wählen → AVV wählen → Berechnen.
+      Lieferant als PLZ oder Stadt eingeben → Behandlung wählen → AVV wählen → Rechenmodus wählen → Berechnen.
     </div>
 
     <div id="results"></div>
@@ -397,10 +402,9 @@ const URLS = {
   avv: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=avv`
 };
 
-const LS_THEME_KEY = "wasteMap_theme_v1";
-const LS_PANEL_POS_KEY = "wasteMap_panelPos_v1";
-const LS_COLOR_KEY = "wasteMap_themeColor_v1";
-const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v1";
+const LS_THEME_KEY = "wasteMap_theme_v2";
+const LS_PANEL_POS_KEY = "wasteMap_panelPos_v2";
+const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v2";
 
 let map;
 let isMobile = false;
@@ -449,6 +453,7 @@ async function init(){
 
   fillAvvDropdown();
   renderStations();
+  updateModeLabels();
   setLoadStatus(`✅ Ladestellen ${ladestellen.length} · AVV ${avvRows.length}`);
 }
 
@@ -456,7 +461,7 @@ function initUI(){
   document.getElementById("btnTheme").addEventListener("click", ()=>{
     document.body.classList.toggle("dark");
     saveLS(LS_THEME_KEY, document.body.classList.contains("dark") ? "dark" : "light");
-    renderStations();
+    renderStations(lastResults);
   });
 
   document.getElementById("btnCalc").addEventListener("click", calculate);
@@ -464,6 +469,8 @@ function initUI(){
   document.getElementById("closePanel").addEventListener("click", ()=>{
     document.getElementById("panel").classList.add("hidden");
   });
+
+  document.getElementById("calcMode").addEventListener("change", updateModeLabels);
 
   const header = document.getElementById("panelHeader");
   header.addEventListener("click", (e)=>{
@@ -478,13 +485,15 @@ function initMobileUI(){
   document.getElementById("drawerClose").addEventListener("click", closeDrawer);
   document.getElementById("drawerBackdrop").addEventListener("click", closeDrawer);
 
-  syncMobileInput("supplierPlz", "supplierPlzMobile");
+  syncMobileInput("supplierQuery", "supplierQueryMobile");
   syncMobileSelect("treatment", "treatmentMobile");
   syncMobileSelect("avvSelect", "avvSelectMobile");
   syncMobileInput("qtyT", "qtyTMobile");
   syncMobileInput("freightPerKm", "freightPerKmMobile");
-  syncMobileInput("factor", "factorMobile");
-  syncMobileInput("targetEk", "targetEkMobile");
+  syncMobileSelect("calcMode", "calcModeMobile");
+  syncMobileInput("targetValue", "targetValueMobile");
+
+  document.getElementById("calcModeMobile").addEventListener("change", updateModeLabels);
 
   document.getElementById("btnCalcMobile").addEventListener("click", ()=>{
     closeDrawer();
@@ -495,6 +504,26 @@ function initMobileUI(){
     closeDrawer();
     fitAllStations();
   });
+}
+
+function updateModeLabels(){
+  const mode = document.getElementById("calcMode").value;
+  const desktopLabel = document.getElementById("targetValueLabel");
+  const mobileLabel = document.getElementById("targetValueLabelMobile");
+  const desktopInput = document.getElementById("targetValue");
+  const mobileInput = document.getElementById("targetValueMobile");
+
+  if(mode === "targetMargin"){
+    desktopLabel.textContent = "Ziel-Rohertrag €/t";
+    mobileLabel.textContent = "Ziel-Rohertrag €/t";
+    desktopInput.placeholder = "z. B. 10,00";
+    mobileInput.placeholder = "z. B. 10,00";
+  }else{
+    desktopLabel.textContent = "Ziel-EK €/t";
+    mobileLabel.textContent = "Ziel-EK €/t";
+    desktopInput.placeholder = "optional";
+    mobileInput.placeholder = "optional";
+  }
 }
 
 function syncMobileSelect(masterId, mobileId){
@@ -508,7 +537,11 @@ function syncMobileSelect(masterId, mobileId){
   }
   copyOptions();
 
-  master.addEventListener("change", ()=>copyOptions());
+  master.addEventListener("change", ()=>{
+    copyOptions();
+    if(masterId === "calcMode") updateModeLabels();
+  });
+
   mobile.addEventListener("change", ()=>{
     master.value = mobile.value;
     master.dispatchEvent(new Event("change"));
@@ -745,13 +778,16 @@ function renderStations(results=null){
   }
 }
 
-async function geocodeSupplierPlz(plz){
-  const clean = String(plz || "").trim();
+async function geocodeSupplierLocation(query){
+  const clean = String(query || "").trim();
   if(!clean) return null;
 
-  if(supplierGeoCache[clean]) return supplierGeoCache[clean];
+  const cacheKey = normText(clean);
+  if(supplierGeoCache[cacheKey]) return supplierGeoCache[cacheKey];
 
-  const q = `${clean}, Deutschland`;
+  const isPlz = /^[0-9]{4,5}$/.test(clean);
+  const q = isPlz ? `${clean}, Deutschland` : `${clean}, Deutschland`;
+
   const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=de&q=" + encodeURIComponent(q);
 
   try{
@@ -764,7 +800,7 @@ async function geocodeSupplierPlz(plz){
         label: data[0].display_name || q
       };
       if(isFinite(result.lat) && isFinite(result.lon)){
-        supplierGeoCache[clean] = result;
+        supplierGeoCache[cacheKey] = result;
         saveLS(LS_SUPPLIER_CACHE, supplierGeoCache);
         return result;
       }
@@ -775,11 +811,11 @@ async function geocodeSupplierPlz(plz){
   return null;
 }
 
-function setStartPoint(geo, plz){
+function setStartPoint(geo, query){
   startPoint = {
     id: "START",
-    name: `PLZ ${plz}`,
-    label: geo.label || `PLZ ${plz}`,
+    name: query,
+    label: geo.label || query,
     lat: geo.lat,
     lon: geo.lon
   };
@@ -812,7 +848,7 @@ function setStartPoint(geo, plz){
     fillOpacity:0.22
   }).addTo(map);
 
-  document.getElementById("kpiStart").textContent = `PLZ ${plz}`;
+  document.getElementById("kpiStart").textContent = query;
   document.getElementById("kpiStartSub").textContent = geo.label || "—";
 }
 
@@ -829,13 +865,13 @@ async function calculate(){
   out.innerHTML = "";
 
   const inputs = getInputs();
-  const { plz, behandlung, avv, qtyT, freightPerKm, factor, targetEk } = inputs;
+  const { supplierQuery, behandlung, avv, qtyT, freightPerKm, calcMode, targetValue } = inputs;
 
   document.getElementById("kpiQty").textContent = `Menge: ${fmt(qtyT,1)} t`;
   document.getElementById("kpiRoute").textContent = "—";
 
-  if(!plz){
-    out.innerHTML = `<div class="small">Bitte eine PLZ vom Lieferanten eingeben.</div>`;
+  if(!supplierQuery){
+    out.innerHTML = `<div class="small">Bitte PLZ oder Stadt vom Lieferanten eingeben.</div>`;
     document.getElementById("kpiCount").textContent = "—";
     return;
   }
@@ -850,20 +886,27 @@ async function calculate(){
     return;
   }
 
-  setLoadStatus("PLZ wird geocodet …");
-  const geo = await geocodeSupplierPlz(plz);
-
-  if(!geo){
-    out.innerHTML = `<div class="small">PLZ konnte nicht gefunden werden.</div>`;
-    document.getElementById("kpiCount").textContent = "0";
-    setLoadStatus("⚠️ PLZ nicht gefunden");
+  if(calcMode === "targetMargin" && !isFinite(targetValue)){
+    out.innerHTML = `<div class="small">Bitte einen Ziel-Rohertrag eingeben.</div>`;
+    document.getElementById("kpiCount").textContent = "—";
     return;
   }
 
-  setStartPoint(geo, plz);
+  setLoadStatus("Lieferant wird geocodet …");
+  const geo = await geocodeSupplierLocation(supplierQuery);
+
+  if(!geo){
+    out.innerHTML = `<div class="small">PLZ oder Stadt konnte nicht gefunden werden.</div>`;
+    document.getElementById("kpiCount").textContent = "0";
+    setLoadStatus("⚠️ Ort nicht gefunden");
+    return;
+  }
+
+  setStartPoint(geo, supplierQuery);
 
   const avvInfo = avvMap.get(normText(avv));
-  const co2Value = avvInfo && isFinite(avvInfo.co2) ? avvInfo.co2 : NaN;
+  const co2Raw = avvInfo && isFinite(avvInfo.co2) ? avvInfo.co2 : NaN;
+  const co2ValuePlus = isFinite(co2Raw) ? Math.abs(co2Raw) : 0;
 
   const results = [];
 
@@ -873,40 +916,42 @@ async function calculate(){
 
     const kmAir = haversineKm(startPoint.lat, startPoint.lon, x.lat, x.lon);
 
-    let preisNachCo2 = x.preisBasis;
-    let co2Anteil = 0;
+    const preisBasis = isFinite(x.preisBasis) ? x.preisBasis : 0;
+    const co2Anteil = co2ValuePlus;
+    const preisNachCo2 = preisBasis + co2Anteil;
 
-    if(x.co2Mod === "add"){
-      if(isFinite(co2Value)){
-        co2Anteil = co2Value;
-        preisNachCo2 = x.preisBasis + co2Value;
-      }
-    }else{
-      co2Anteil = 0;
-      preisNachCo2 = x.preisBasis;
-    }
-
-    const freightPerT = (kmAir * freightPerKm / qtyT) * factor;
+    const freightPerT = (kmAir * freightPerKm / qtyT);
     const ekProT = preisNachCo2 + freightPerT;
     const gesamt = ekProT * qtyT;
+
+    const targetEk = calcMode === "targetEk" ? targetValue : NaN;
+    const targetMargin = calcMode === "targetMargin" ? targetValue : NaN;
+
     const delta = isFinite(targetEk) ? (targetEk - ekProT) : NaN;
+    const mindestEk = isFinite(targetMargin) ? (preisNachCo2 + freightPerT + targetMargin) : NaN;
+    const displayValue = calcMode === "targetMargin" ? mindestEk : ekProT;
 
     results.push({
       entity: x,
       kmAir,
       calcKm: kmAir,
-      preisBasis: x.preisBasis,
-      co2Mod: x.co2Mod,
+      preisBasis,
+      co2Raw,
       co2Anteil,
       preisNachCo2,
       freightPerT,
       ekProT,
       gesamt,
-      delta
+      delta,
+      calcMode,
+      targetEk,
+      targetMargin,
+      mindestEk,
+      displayValue
     });
   }
 
-  results.sort((a,b)=>a.ekProT - b.ekProT);
+  results.sort((a,b)=>a.displayValue - b.displayValue);
   lastResults = results;
   document.getElementById("kpiCount").textContent = String(results.length);
 
@@ -927,14 +972,17 @@ async function calculate(){
     return;
   }
 
+  const modeHeader = calcMode === "targetMargin" ? "Mindest-EK / t" : "EK / t";
+  const infoHeader = calcMode === "targetMargin" ? "Rohertrag" : (isFinite(targetValue) ? "Abweichung" : "Info");
+
   const table = document.createElement("table");
   table.innerHTML = `
     <thead>
       <tr>
         <th>Firma / Ladestelle</th>
         <th>KM</th>
-        <th>EK</th>
-        <th>${isFinite(targetEk) ? "Abweichung" : "Info"}</th>
+        <th>${modeHeader}</th>
+        <th>${infoHeader}</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -943,6 +991,10 @@ async function calculate(){
   const tbody = table.querySelector("tbody");
 
   for(const row of results){
+    const valueLine = calcMode === "targetMargin"
+      ? `<b>${fmt(row.mindestEk)} €/t</b><br><span class="small">EK nach CO2 + Fracht + Rohertrag</span>`
+      : `<b>${fmt(row.ekProT)} €/t</b><br><span class="small">${fmt(row.gesamt)} € für ${fmt(qtyT,1)} t</span>`;
+
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>
@@ -951,11 +1003,8 @@ async function calculate(){
         <span class="small">AVV ${esc(row.entity.avv)} · ${esc(row.entity.behandlung)} · Basis ${fmt(row.preisBasis)} €/t</span>
       </td>
       <td>${fmt(row.calcKm,0)}</td>
-      <td>
-        <b>${fmt(row.ekProT)} €/t</b><br>
-        <span class="small">${fmt(row.gesamt)} € für ${fmt(qtyT,1)} t</span>
-      </td>
-      <td>${makeBadge(row, targetEk)}</td>
+      <td>${valueLine}</td>
+      <td>${makeBadge(row)}</td>
     `;
     tr.addEventListener("click", async ()=>{
       await showRouteDetails(startPoint, row.entity, row);
@@ -966,8 +1015,13 @@ async function calculate(){
   out.appendChild(table);
 }
 
-function makeBadge(row, targetEk){
-  if(!isFinite(targetEk)) return `<span class="badge">Klick für Route</span>`;
+function makeBadge(row){
+  if(row.calcMode === "targetMargin"){
+    if(!isFinite(row.targetMargin)) return `<span class="badge">—</span>`;
+    return `<span class="badge good">Rohertrag ${fmt(row.targetMargin)} €/t</span>`;
+  }
+
+  if(!isFinite(row.targetEk)) return `<span class="badge">Klick für Route</span>`;
   const d = row.delta;
   if(!isFinite(d)) return `<span class="badge">—</span>`;
   if(d >= 10) return `<span class="badge good">+${fmt(d)} €/t</span>`;
@@ -976,8 +1030,10 @@ function makeBadge(row, targetEk){
 }
 
 function getResultColor(row){
-  const targetEk = toNum(document.getElementById("targetEk").value);
-  if(!isFinite(targetEk) || !isFinite(row.delta)) return "#2563eb";
+  if(row.calcMode === "targetMargin"){
+    return "#2563eb";
+  }
+  if(!isFinite(row.targetEk) || !isFinite(row.delta)) return "#2563eb";
   if(row.delta >= 10) return "#16a34a";
   if(row.delta >= 0) return "#f59e0b";
   return "#dc2626";
@@ -1033,13 +1089,16 @@ async function showRouteDetails(origin, target, baseRow){
   const inputs = getInputs();
   const qtyT = inputs.qtyT;
   const freightPerKm = inputs.freightPerKm;
-  const factor = inputs.factor;
-  const targetEk = inputs.targetEk;
+  const calcMode = inputs.calcMode;
+  const targetValue = inputs.targetValue;
 
-  const freightPerT = (usedKm * freightPerKm / qtyT) * factor;
+  const freightPerT = (usedKm * freightPerKm / qtyT);
   const ekProT = baseRow.preisNachCo2 + freightPerT;
   const gesamt = ekProT * qtyT;
+  const targetEk = calcMode === "targetEk" ? targetValue : NaN;
+  const targetMargin = calcMode === "targetMargin" ? targetValue : NaN;
   const delta = isFinite(targetEk) ? (targetEk - ekProT) : NaN;
+  const mindestEk = isFinite(targetMargin) ? (baseRow.preisNachCo2 + freightPerT + targetMargin) : NaN;
 
   document.getElementById("kpiRoute").textContent =
     `${fmt(usedKm,0)} km${isFinite(minutes) ? ` · ${fmt(minutes,0)} min` : ""}`;
@@ -1049,13 +1108,17 @@ async function showRouteDetails(origin, target, baseRow){
     routeKm: usedKm,
     durationMin: minutes,
     preisBasis: baseRow.preisBasis,
-    co2Mod: baseRow.co2Mod,
+    co2Raw: baseRow.co2Raw,
     co2Anteil: baseRow.co2Anteil,
     preisNachCo2: baseRow.preisNachCo2,
     freightPerT,
     ekProT,
     gesamt,
-    delta
+    delta,
+    calcMode,
+    targetEk,
+    targetMargin,
+    mindestEk
   };
 
   renderStations(lastResults);
@@ -1067,9 +1130,21 @@ function showDetail(row){
   const grid = document.getElementById("detailGrid");
   const title = document.getElementById("detailTitle");
   const qtyT = Math.max(0.1, toNum(document.getElementById("qtyT").value) || 24);
-  const targetEk = toNum(document.getElementById("targetEk").value);
 
   title.textContent = `Details – ${row.entity.firma || "Ladestelle"}`;
+
+  const modeText = row.calcMode === "targetMargin" ? "Ziel-Rohertrag" : "Ziel-EK";
+  const modeValueText = row.calcMode === "targetMargin"
+    ? (isFinite(row.targetMargin) ? `${fmt(row.targetMargin)} €/t` : "—")
+    : (isFinite(row.targetEk) ? `${fmt(row.targetEk)} €/t` : "—");
+
+  const resultLineA = row.calcMode === "targetMargin"
+    ? `<div class="kv"><span class="k">Ziel-Rohertrag</span><span class="v">${isFinite(row.targetMargin) ? fmt(row.targetMargin)+" €/t" : "—"}</span></div>`
+    : `<div class="kv"><span class="k">Ziel-EK</span><span class="v">${isFinite(row.targetEk) ? fmt(row.targetEk)+" €/t" : "—"}</span></div>`;
+
+  const resultLineB = row.calcMode === "targetMargin"
+    ? `<div class="kv"><span class="k">Mindest-EK / t</span><span class="v">${isFinite(row.mindestEk) ? fmt(row.mindestEk)+" €/t" : "—"}</span></div>`
+    : `<div class="kv"><span class="k">Abweichung</span><span class="v">${isFinite(row.delta) ? fmt(row.delta)+" €/t" : "—"}</span></div>`;
 
   grid.innerHTML = `
     <div class="kv"><span class="k">Firma</span><span class="v">${esc(row.entity.firma || "—")}</span></div>
@@ -1081,22 +1156,25 @@ function showDetail(row){
     <div class="kv"><span class="k">KM</span><span class="v">${fmt(row.routeKm,2)} km</span></div>
     <div class="kv"><span class="k">Fahrzeit</span><span class="v">${isFinite(row.durationMin) ? fmt(row.durationMin,0)+" min" : "—"}</span></div>
 
+    <div class="kv"><span class="k">Rechenmodus</span><span class="v">${esc(modeText)}</span></div>
+    <div class="kv"><span class="k">Modus-Wert</span><span class="v">${modeValueText}</span></div>
+
     <div class="kv"><span class="k">Preis_Basis</span><span class="v">${fmt(row.preisBasis)} €/t</span></div>
-    <div class="kv"><span class="k">CO2_mod</span><span class="v">${esc(row.co2Mod || "—")}</span></div>
+    <div class="kv"><span class="k">CO2 aus AVV</span><span class="v">${isFinite(row.co2Anteil) ? fmt(row.co2Anteil)+" €/t" : "—"}</span></div>
 
-    <div class="kv"><span class="k">CO2 Anteil</span><span class="v">${fmt(row.co2Anteil)} €/t</span></div>
     <div class="kv"><span class="k">Preis nach CO2</span><span class="v">${fmt(row.preisNachCo2)} €/t</span></div>
-
     <div class="kv"><span class="k">Fracht</span><span class="v">${fmt(row.freightPerT)} €/t</span></div>
-    <div class="kv"><span class="k">EK / t</span><span class="v">${fmt(row.ekProT)} €/t</span></div>
 
-    <div class="kv"><span class="k">Menge</span><span class="v">${fmt(qtyT,1)} t</span></div>
+    <div class="kv"><span class="k">EK / t</span><span class="v">${fmt(row.ekProT)} €/t</span></div>
     <div class="kv"><span class="k">Gesamt</span><span class="v">${fmt(row.gesamt)} €</span></div>
 
-    <div class="kv"><span class="k">Ziel-EK</span><span class="v">${isFinite(targetEk) ? fmt(targetEk)+" €/t" : "—"}</span></div>
-    <div class="kv"><span class="k">Abweichung</span><span class="v">${isFinite(row.delta) ? fmt(row.delta)+" €/t" : "—"}</span></div>
-
+    <div class="kv"><span class="k">Menge</span><span class="v">${fmt(qtyT,1)} t</span></div>
     <div class="kv"><span class="k">Routing</span><span class="v">${isFinite(row.durationMin) ? "echte Strecke" : "Luftlinie-Fallback"}</span></div>
+
+    ${resultLineA}
+    ${resultLineB}
+
+    <div class="kv"><span class="k">Formel</span><span class="v">${row.calcMode === "targetMargin" ? "Preis_Basis + CO2 + Fracht + Rohertrag" : "Preis_Basis + CO2 + Fracht"}</span></div>
     <div class="kv"><span class="k">Koordinaten</span><span class="v">${fmt(row.entity.lat,5)}, ${fmt(row.entity.lon,5)}</span></div>
   `;
 
@@ -1135,15 +1213,14 @@ function applyThemeFromLS(){
 }
 
 function getInputs(){
-  const factor = toNum(document.getElementById("factor").value);
   return {
-    plz: str(document.getElementById("supplierPlz").value).trim(),
+    supplierQuery: str(document.getElementById("supplierQuery").value).trim(),
     behandlung: str(document.getElementById("treatment").value).trim(),
     avv: str(document.getElementById("avvSelect").value).trim(),
     qtyT: Math.max(0.1, toNum(document.getElementById("qtyT").value) || 24),
     freightPerKm: toNum(document.getElementById("freightPerKm").value) || 1.85,
-    factor: isFinite(factor) ? factor : 1.05,
-    targetEk: toNum(document.getElementById("targetEk").value)
+    calcMode: str(document.getElementById("calcMode").value).trim() || "targetEk",
+    targetValue: toNum(document.getElementById("targetValue").value)
   };
 }
 
