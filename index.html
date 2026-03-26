@@ -201,11 +201,17 @@
       font:14px/1.25 system-ui,-apple-system,Segoe UI,Roboto,Arial;
       color:var(--ui-text);
     }
-    .missPanel.hidden{display:none;}
+   .missPanel.hidden{display:none;}
+.missPanel.dragging{
+  transition:none !important;
+}
     .missHead{
-      display:flex;align-items:center;justify-content:space-between;
-      padding:10px 12px;background:var(--ui-soft);border-bottom:1px solid var(--ui-border);
-      font-weight:900;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 12px;background:var(--ui-soft);border-bottom:1px solid var(--ui-border);
+  font-weight:900;
+  cursor:move;
+  user-select:none;
+}
     }
     .missHeadActions{display:flex;gap:8px;align-items:center}
     .missTabs{display:flex;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--ui-border)}
@@ -525,10 +531,11 @@ async function init(){
 
   setTimeout(()=>map.invalidateSize(), 100);
 
-  initUI();
-  initMobileUI();
-  initPanelDragDesktopOnly();
-  applyResponsiveLayout();
+ initUI();
+initMobileUI();
+initPanelDragDesktopOnly();
+initMissingPanelDrag();
+applyResponsiveLayout();
   window.addEventListener("resize", applyResponsiveLayout);
 
   updateLoadStatus("Lade Tabellen …");
@@ -740,6 +747,56 @@ function initPanelDragDesktopOnly(){
     saveLS(LS_PANEL_POS_KEY, {x:r.left, y:r.top});
   });
 }
+function initMissingPanelDrag(){
+  const panel = document.getElementById("missPanel");
+  const header = panel.querySelector(".missHead");
+  if(!panel || !header) return;
+
+  let dragging = false;
+  let sx = 0, sy = 0, sl = 0, st = 0;
+
+  header.addEventListener("mousedown", (e)=>{
+    if(window.matchMedia("(max-width: 760px)").matches) return;
+    if(e.target && (e.target.id === "btnCloseMissing" || e.target.id === "btnExportMissing")) return;
+
+    dragging = true;
+    panel.classList.add("dragging");
+
+    const r = panel.getBoundingClientRect();
+    sx = e.clientX;
+    sy = e.clientY;
+    sl = r.left;
+    st = r.top;
+
+    panel.style.left = sl + "px";
+    panel.style.top = st + "px";
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+
+    e.preventDefault();
+  });
+
+  window.addEventListener("mousemove", (e)=>{
+    if(!dragging) return;
+
+    const panelW = panel.offsetWidth || 440;
+    const panelH = panel.offsetHeight || 300;
+    const maxX = Math.max(10, window.innerWidth - panelW - 10);
+    const maxY = Math.max(10, window.innerHeight - panelH - 10);
+
+    const x = Math.min(maxX, Math.max(10, sl + (e.clientX - sx)));
+    const y = Math.min(maxY, Math.max(10, st + (e.clientY - sy)));
+
+    panel.style.left = x + "px";
+    panel.style.top = y + "px";
+  });
+
+  window.addEventListener("mouseup", ()=>{
+    if(!dragging) return;
+    dragging = false;
+    panel.classList.remove("dragging");
+  });
+}  
 
 function parseCsv(url){
   return new Promise((resolve, reject)=>{
@@ -944,7 +1001,23 @@ function updateLoadStatus(text){
 }
 
 function openMissingPanel(){
-  document.getElementById("missPanel").classList.remove("hidden");
+  const panel = document.getElementById("missPanel");
+  panel.classList.remove("hidden");
+
+  if(window.matchMedia("(max-width: 760px)").matches){
+    panel.style.left = "";
+    panel.style.right = "";
+    panel.style.top = "";
+    panel.style.bottom = "";
+  }else{
+    if(!panel.style.left && !panel.style.top){
+      panel.style.left = "12px";
+      panel.style.top = "88px";
+      panel.style.right = "auto";
+      panel.style.bottom = "auto";
+    }
+  }
+
   renderMissingPanel();
 }
 function closeMissingPanel(){
