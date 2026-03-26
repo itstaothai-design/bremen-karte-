@@ -82,7 +82,6 @@
     .w240{min-width:240px}
     .w180{min-width:180px}
     .w160{min-width:160px}
-    .w140{min-width:140px}
     .w120{min-width:120px}
 
     .btn{
@@ -100,13 +99,18 @@
       padding:6px 10px;border-radius:999px;
       border:1px solid var(--pill-border);background:var(--pill-bg);
       white-space:nowrap;font-weight:900;color:var(--ui-text);
-      display:flex;gap:8px;align-items:center;
+      display:flex;gap:10px;align-items:center;
     }
+    .pill.clickable{cursor:pointer}
+    .pill.clickable:hover{filter:brightness(.98)}
     #loadStatus{margin-left:auto;}
     .dot{width:8px;height:8px;border-radius:50%;background:rgba(148,163,184,.8);display:inline-block;}
     .dot.good{background:var(--good)}
     .dot.mid{background:var(--mid)}
     .dot.bad{background:var(--bad)}
+    .statusNum{font-weight:900}
+    .statusOpen{color:var(--bad)}
+    .statusLoaded{color:var(--good)}
 
     .panel{
       position:absolute; top:88px; right:12px; z-index:2500;
@@ -178,6 +182,52 @@
       border:2px solid white;
     }
 
+    .missPanel{
+      position:absolute;
+      top:88px;
+      left:12px;
+      z-index:2600;
+      width:440px;
+      max-width:calc(100vw - 24px);
+      max-height:calc(100vh - 110px);
+      display:flex;
+      flex-direction:column;
+      background:var(--ui-bg);
+      border:1px solid var(--ui-border);
+      border-radius:16px;
+      box-shadow:var(--ui-shadow);
+      overflow:hidden;
+      font:14px/1.25 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      color:var(--ui-text);
+    }
+    .missPanel.hidden{display:none;}
+    .missHead{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:10px 12px;background:var(--ui-soft);border-bottom:1px solid var(--ui-border);
+      font-weight:900;
+    }
+    .missHeadActions{display:flex;gap:8px;align-items:center}
+    .missTabs{display:flex;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--ui-border)}
+    .missTab{
+      padding:7px 10px;border-radius:999px;border:1px solid var(--ui-border);
+      background:var(--ui-soft);cursor:pointer;font-weight:800;
+    }
+    .missTab.active{background:var(--btn-primary);border-color:var(--btn-primary);color:var(--btn-primary-text)}
+    .missBody{padding:10px 12px;overflow:auto}
+    .missList{display:flex;flex-direction:column;gap:8px}
+    .missItem{
+      border:1px solid var(--ui-border);
+      background:var(--ui-soft);
+      border-radius:12px;padding:10px;
+    }
+    .missTitle{font-weight:900;margin-bottom:4px}
+    .missMeta{font-size:12px;color:var(--ui-muted)}
+    .missEmpty{
+      border:1px dashed var(--ui-border);
+      border-radius:12px;padding:16px;text-align:center;color:var(--ui-muted);
+      background:var(--ui-soft);
+    }
+
     #btnMenu{display:none;}
     .drawerBackdrop{
       position:fixed;inset:0;z-index:4500;
@@ -231,6 +281,14 @@
       #loadStatus{margin-left:0;}
       .kpis{grid-template-columns:1fr;}
       .detail-grid{grid-template-columns:1fr;}
+      .missPanel{
+        top:auto;
+        bottom:10px;
+        left:10px;
+        right:10px;
+        width:auto;
+        max-height:60vh;
+      }
     }
   </style>
 </head>
@@ -290,11 +348,10 @@
   </div>
 
   <button class="btn" id="btnTheme" title="Hell/Dunkel umschalten">🌙</button>
-  <button class="btn" id="btnGeo" title="Fehlende Ladestellen geocoden / prüfen">📍 Geocoden</button>
+  <button class="btn" id="btnGeo" title="Ladestellen geocoden">📍 Geocoden</button>
   <button class="btn primary" id="btnCalc">Berechnen</button>
-  <button class="btn desktopOnly" id="btnFocusAll">Alle zeigen</button>
 
-  <div class="pill" id="loadStatus"><span class="dot"></span> Lade Daten …</div>
+  <div class="pill clickable" id="loadStatus" title="Klicken für Details"></div>
 </div>
 
 <div id="drawerBackdrop" class="drawerBackdrop"></div>
@@ -342,7 +399,6 @@
 
     <button class="btn" id="btnGeoMobile">📍 Geocoden</button>
     <button class="btn primary" id="btnCalcMobile">Berechnen</button>
-    <button class="btn" id="btnFocusAllMobile">Alle zeigen</button>
   </div>
 </aside>
 
@@ -383,6 +439,23 @@
   </div>
 </div>
 
+<div id="missPanel" class="missPanel hidden">
+  <div class="missHead">
+    <div>Nicht geladene / unvollständige Einträge</div>
+    <div class="missHeadActions">
+      <button class="btn" id="btnExportMissing" title="CSV exportieren">Export</button>
+      <button class="x" id="btnCloseMissing" title="Schließen">✕</button>
+    </div>
+  </div>
+  <div class="missTabs">
+    <button class="missTab active" data-tab="missingGeo">Ohne Koordinaten</button>
+    <button class="missTab" data-tab="missingAvv">Ohne AVV</button>
+    <button class="missTab" data-tab="missingTreatment">Ohne Behandlung</button>
+    <button class="missTab" data-tab="allIssues">Alle Probleme</button>
+  </div>
+  <div class="missBody" id="missBody"></div>
+</div>
+
 <script>
 function saveLS(key, obj){
   try{ localStorage.setItem(key, JSON.stringify(obj)); }catch(e){}
@@ -403,11 +476,11 @@ const URLS = {
   avv: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=avv`
 };
 
-const LS_THEME_KEY = "wasteMap_theme_v4";
-const LS_PANEL_POS_KEY = "wasteMap_panelPos_v4";
-const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v4";
-const LS_ROUTE_CACHE = "wasteMap_routeCache_v2";
-const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v1";
+const LS_THEME_KEY = "wasteMap_theme_v5";
+const LS_PANEL_POS_KEY = "wasteMap_panelPos_v5";
+const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v5";
+const LS_ROUTE_CACHE = "wasteMap_routeCache_v3";
+const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v2";
 
 let map;
 let isMobile = false;
@@ -427,6 +500,7 @@ let stationMarkers = [];
 let supplierGeoCache = loadLS(LS_SUPPLIER_CACHE, {});
 let routeCache = loadLS(LS_ROUTE_CACHE, {});
 let stationGeoCache = loadLS(LS_STATION_GEO_CACHE, {});
+let currentMissingTab = "missingGeo";
 
 window.addEventListener("load", ()=>init().catch(err=>{
   console.error("INIT ERROR:", err);
@@ -451,7 +525,7 @@ async function init(){
   applyResponsiveLayout();
   window.addEventListener("resize", applyResponsiveLayout);
 
-  setLoadStatus("Lade Tabellen …");
+  updateLoadStatus("Lade Tabellen …");
 
   await loadAvv();
   await loadLadestellen();
@@ -459,7 +533,7 @@ async function init(){
   fillAvvDropdown();
   renderStations();
   updateModeLabels();
-  updateLoadedStatus();
+  refreshLoadStatus();
 }
 
 function initUI(){
@@ -471,7 +545,6 @@ function initUI(){
 
   document.getElementById("btnCalc").addEventListener("click", calculate);
   document.getElementById("btnGeo").addEventListener("click", runStationGeocode);
-  document.getElementById("btnFocusAll").addEventListener("click", fitAllStations);
   document.getElementById("closePanel").addEventListener("click", ()=>{
     document.getElementById("panel").classList.add("hidden");
   });
@@ -483,6 +556,22 @@ function initUI(){
     if(e.target && e.target.id === "closePanel") return;
     if(!isMobile) return;
     document.getElementById("panel").classList.toggle("collapsed");
+  });
+
+  document.getElementById("loadStatus").addEventListener("click", ()=>{
+    toggleMissingPanel();
+  });
+
+  document.getElementById("btnCloseMissing").addEventListener("click", closeMissingPanel);
+  document.getElementById("btnExportMissing").addEventListener("click", exportMissingCsv);
+
+  document.querySelectorAll(".missTab").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll(".missTab").forEach(x=>x.classList.remove("active"));
+      btn.classList.add("active");
+      currentMissingTab = btn.dataset.tab;
+      renderMissingPanel();
+    });
   });
 }
 
@@ -509,11 +598,6 @@ function initMobileUI(){
   document.getElementById("btnGeoMobile").addEventListener("click", async ()=>{
     closeDrawer();
     await runStationGeocode();
-  });
-
-  document.getElementById("btnFocusAllMobile").addEventListener("click", ()=>{
-    closeDrawer();
-    fitAllStations();
   });
 }
 
@@ -706,15 +790,20 @@ async function loadLadestellen(){
     let lat = toNum(r["lat"]);
     let lon = toNum(r["lon"]);
 
-    const geoKey = getStationGeoKey(r, idx);
-    const cachedGeo = stationGeoCache[geoKey];
-    if((!isFinite(lat) || !isFinite(lon)) && cachedGeo && isFinite(cachedGeo.lat) && isFinite(cachedGeo.lon)){
-      lat = cachedGeo.lat;
-      lon = cachedGeo.lon;
+    const rowKey = getStationRowKey(r, idx);
+    const queryKey = "station__" + normText(buildStationGeocodeQuery(r));
+
+    if((!isFinite(lat) || !isFinite(lon)) && stationGeoCache[rowKey]){
+      lat = stationGeoCache[rowKey].lat;
+      lon = stationGeoCache[rowKey].lon;
+    }else if((!isFinite(lat) || !isFinite(lon)) && stationGeoCache[queryKey]){
+      lat = stationGeoCache[queryKey].lat;
+      lon = stationGeoCache[queryKey].lon;
     }
 
     return {
       id: "L"+idx,
+      rowIndex: idx + 2,
       firma: str(r["firma"]).trim(),
       ladestelle: str(r["ladestelle"]).trim(),
       lat,
@@ -727,11 +816,7 @@ async function loadLadestellen(){
       geoQuery: buildStationGeocodeQuery(r),
       raw: r
     };
-  }).filter(x =>
-    x.ladestelle &&
-    x.avvList.length &&
-    x.behandlung
-  );
+  });
 }
 
 function fillAvvDropdown(){
@@ -760,9 +845,7 @@ function renderStations(results=null){
     for(const r of results) scoreMap.set(r.entity.id, r);
   }
 
-  for(const x of ladestellen){
-    if(!isFinite(x.lat) || !isFinite(x.lon)) continue;
-
+  for(const x of getRenderableStations()){
     const row = scoreMap.get(x.id);
     const isSelected = currentFocusedRow && currentFocusedRow.entity.id === x.id;
 
@@ -788,8 +871,8 @@ function renderStations(results=null){
 
     const popupText = `
       <b>${esc(x.firma || "—")}</b><br>
-      ${esc(x.ladestelle)}<br>
-      <small>AVV: ${esc(x.avvList.join(", "))} · ${esc(x.behandlung)} · Basis: ${fmt(x.preisBasis)} €/t · CO2_mod: ${esc(x.co2Mod || "—")}</small>
+      ${esc(x.ladestelle || "—")}<br>
+      <small>AVV: ${esc(x.avvList.join(", ") || "—")} · ${esc(x.behandlung || "—")} · Basis: ${fmt(x.preisBasis)} €/t</small>
     `;
 
     m.bindPopup(popupText);
@@ -804,6 +887,136 @@ function renderStations(results=null){
 
     stationMarkers.push(m);
   }
+}
+
+function getRenderableStations(){
+  return ladestellen.filter(x =>
+    isFinite(x.lat) &&
+    isFinite(x.lon) &&
+    x.avvList.length > 0 &&
+    !!str(x.behandlung).trim()
+  );
+}
+
+function getMissingGeoRows(){
+  return ladestellen.filter(x => !isFinite(x.lat) || !isFinite(x.lon));
+}
+function getMissingAvvRows(){
+  return ladestellen.filter(x => !x.avvList.length);
+}
+function getMissingTreatmentRows(){
+  return ladestellen.filter(x => !str(x.behandlung).trim());
+}
+function getIssueRows(){
+  return ladestellen.filter(x =>
+    !isFinite(x.lat) || !isFinite(x.lon) || !x.avvList.length || !str(x.behandlung).trim()
+  );
+}
+
+function refreshLoadStatus(textOverride=null){
+  const totalWithData = ladestellen.length;
+  const loaded = getRenderableStations().length;
+  const open = totalWithData - loaded;
+
+  const pill = document.getElementById("loadStatus");
+  if(textOverride){
+    pill.innerHTML = `<span class="dot"></span> ${esc(textOverride)}`;
+    return;
+  }
+
+  pill.innerHTML = `
+    <span class="dot ${open ? "mid" : "good"}"></span>
+    <span>✅ geladen <span class="statusNum statusLoaded">${loaded}</span></span>
+    <span>•</span>
+    <span>offen <span class="statusNum statusOpen">${open}</span></span>
+    <span>•</span>
+    <span>AVV <span class="statusNum">${avvRows.length}</span></span>
+  `;
+}
+
+function updateLoadStatus(text){
+  const el = document.getElementById("loadStatus");
+  el.innerHTML = `<span class="dot"></span> ${esc(text)}`;
+}
+
+function openMissingPanel(){
+  document.getElementById("missPanel").classList.remove("hidden");
+  renderMissingPanel();
+}
+function closeMissingPanel(){
+  document.getElementById("missPanel").classList.add("hidden");
+}
+function toggleMissingPanel(){
+  const p = document.getElementById("missPanel");
+  if(p.classList.contains("hidden")) openMissingPanel();
+  else closeMissingPanel();
+}
+
+function renderMissingPanel(){
+  const missBody = document.getElementById("missBody");
+
+  let rows = [];
+  if(currentMissingTab === "missingGeo") rows = getMissingGeoRows();
+  else if(currentMissingTab === "missingAvv") rows = getMissingAvvRows();
+  else if(currentMissingTab === "missingTreatment") rows = getMissingTreatmentRows();
+  else rows = getIssueRows();
+
+  if(!rows.length){
+    missBody.innerHTML = `<div class="missEmpty">Keine Einträge in dieser Ansicht.</div>`;
+    return;
+  }
+
+  missBody.innerHTML = `
+    <div class="missList">
+      ${rows.map(r=>`
+        <div class="missItem">
+          <div class="missTitle">${esc(r.firma || "—")} · ${esc(r.ladestelle || "—")}</div>
+          <div class="missMeta">
+            Zeile: ${esc(String(r.rowIndex))}<br>
+            Behandlung: ${esc(r.behandlung || "—")}<br>
+            AVV: ${esc(r.avvRaw || "—")}<br>
+            Lat/Lon: ${isFinite(r.lat) && isFinite(r.lon) ? `${fmt(r.lat,5)}, ${fmt(r.lon,5)}` : "fehlt"}<br>
+            Suchtext: ${esc(r.geoQuery || "—")}
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function exportMissingCsv(){
+  const rows = getIssueRows();
+  if(!rows.length){
+    alert("Es gibt keine problematischen Einträge zum Exportieren.");
+    return;
+  }
+
+  const exportRows = rows.map(r=>({
+    zeile: r.rowIndex,
+    firma: r.firma,
+    ladestelle: r.ladestelle,
+    behandlung: r.behandlung,
+    avv_erlaubt: r.avvRaw,
+    lat: isFinite(r.lat) ? r.lat : "",
+    lon: isFinite(r.lon) ? r.lon : "",
+    geo_query: r.geoQuery,
+    problem: [
+      (!isFinite(r.lat) || !isFinite(r.lon)) ? "keine_koordinaten" : "",
+      (!r.avvList.length) ? "keine_avv" : "",
+      (!str(r.behandlung).trim()) ? "keine_behandlung" : ""
+    ].filter(Boolean).join("|")
+  }));
+
+  const csv = Papa.unparse(exportRows);
+  const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "nicht_geladene_ladestellen.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 async function geocodeSupplierLocation(query){
@@ -868,11 +1081,11 @@ async function geocodeStationQuery(query){
 }
 
 async function runStationGeocode(){
-  const missing = ladestellen.filter(x => (!isFinite(x.lat) || !isFinite(x.lon)) && x.geoQuery);
+  const missing = getMissingGeoRows().filter(x => x.geoQuery);
 
   if(!missing.length){
-    updateLoadedStatus("✅ Alle Ladestellen haben Koordinaten");
-    renderStations(lastResults);
+    refreshLoadStatus();
+    openMissingPanel();
     return;
   }
 
@@ -881,14 +1094,14 @@ async function runStationGeocode(){
 
   for(let i=0; i<missing.length; i++){
     const row = missing[i];
-    setLoadStatus(`Geocoding Ladestellen … ${i+1}/${missing.length}`);
+    updateLoadStatus(`Geocoding ${i+1}/${missing.length} …`);
 
     const geo = await geocodeStationQuery(row.geoQuery);
     if(geo && isFinite(geo.lat) && isFinite(geo.lon)){
       row.lat = geo.lat;
       row.lon = geo.lon;
 
-      const rowKey = getStationGeoKey(row.raw, row.id);
+      const rowKey = getStationRowKey(row.raw, row.rowIndex);
       stationGeoCache[rowKey] = { lat: geo.lat, lon: geo.lon, label: geo.label || row.geoQuery };
       saveLS(LS_STATION_GEO_CACHE, stationGeoCache);
       ok++;
@@ -900,7 +1113,13 @@ async function runStationGeocode(){
   }
 
   renderStations(lastResults);
-  updateLoadedStatus(`✅ Geocoding fertig · gefunden ${ok} · offen ${fail}`);
+  refreshLoadStatus();
+  openMissingPanel();
+
+  if(fail){
+    updateLoadStatus(`Geocoding fertig · gefunden ${ok} · offen ${fail}`);
+    setTimeout(refreshLoadStatus, 1800);
+  }
 }
 
 function setStartPoint(geo, query){
@@ -1035,7 +1254,7 @@ async function getRouteData(from, to){
 async function enrichResultsWithRouteKm(results, origin, inputs){
   for(let i=0;i<results.length;i++){
     const row = results[i];
-    setLoadStatus(`Routen werden berechnet … ${i+1}/${results.length}`);
+    updateLoadStatus(`Routen werden berechnet … ${i+1}/${results.length}`);
 
     const route = await getRouteData(origin, row.entity);
     if(route && isFinite(route.km)){
@@ -1092,13 +1311,14 @@ async function calculate(){
     return;
   }
 
-  setLoadStatus("Lieferant wird geocodet …");
+  updateLoadStatus("Lieferant wird geocodet …");
   const geo = await geocodeSupplierLocation(supplierQuery);
 
   if(!geo){
     out.innerHTML = `<div class="small">PLZ oder Stadt konnte nicht gefunden werden.</div>`;
     document.getElementById("kpiCount").textContent = "0";
-    setLoadStatus("⚠️ Ort nicht gefunden");
+    updateLoadStatus("⚠️ Ort nicht gefunden");
+    setTimeout(refreshLoadStatus, 1800);
     return;
   }
 
@@ -1110,8 +1330,7 @@ async function calculate(){
   let results = [];
   const selectedAvvNorm = normAvv(avv);
 
-  for(const x of ladestellen){
-    if(!isFinite(x.lat) || !isFinite(x.lon)) continue;
+  for(const x of getRenderableStations()){
     if(normText(x.behandlung) !== normText(behandlung)) continue;
     if(!x.avvList.some(code => normAvv(code) === selectedAvvNorm)) continue;
 
@@ -1140,7 +1359,7 @@ async function calculate(){
     document.getElementById("kpiCount").textContent = "0";
     renderStations([]);
     out.innerHTML = `<div class="small">Keine passenden Ladestellen gefunden.</div>`;
-    setLoadStatus("✅ Treffer 0");
+    refreshLoadStatus();
     return;
   }
 
@@ -1157,7 +1376,7 @@ async function calculate(){
   lastResults = results;
   document.getElementById("kpiCount").textContent = String(results.length);
   renderStations(results);
-  setLoadStatus(`✅ Treffer ${results.length}`);
+  refreshLoadStatus();
 
   renderResultsTable(results, inputs);
 }
@@ -1299,7 +1518,6 @@ function showDetail(row){
   title.textContent = `Details – ${row.entity.firma || "Ladestelle"}`;
 
   const isMarginMode = row.calcMode === "targetMargin";
-
   const modeText = isMarginMode ? "Ziel-Rohertrag" : "Ziel-EK";
   const modeValueText = isMarginMode
     ? `${fmt(row.targetMargin)} €/t`
@@ -1341,9 +1559,6 @@ function showDetail(row){
     ${resultLineA}
     ${resultLineB}
 
-    <div class="kv"><span class="k">Formel</span><span class="v">${isMarginMode ? "Preis_Basis + CO2 + Fracht + Rohertrag" : "Preis_Basis + CO2 + Fracht"}</span></div>
-    <div class="kv"><span class="k">Routing</span><span class="v">${isFinite(row.durationMin) ? "echte Strecke" : "Luftlinie-Fallback"}</span></div>
-
     <div class="kv"><span class="k">Koordinaten</span><span class="v">${fmt(row.entity.lat,5)}, ${fmt(row.entity.lon,5)}</span></div>
     <div class="kv"><span class="k">Hinweis</span><span class="v">${row.co2Mod === "incl" ? "CO2 bereits in Preis_Basis enthalten" : (row.co2Mod === "add" ? "CO2 wird aufgeschlagen" : "kein zusätzlicher CO2-Aufschlag")}</span></div>
   `;
@@ -1363,46 +1578,6 @@ function hideDetail(){
   document.getElementById("detailBox").style.display="none";
   document.getElementById("detailGrid").innerHTML="";
   document.getElementById("detailTitle").textContent="Details";
-}
-
-function fitAllStations(){
-  const valid = ladestellen.filter(x => isFinite(x.lat) && isFinite(x.lon));
-  if(!valid.length) return;
-  const bounds = L.latLngBounds(valid.map(x=>[x.lat,x.lon]));
-  if(startPoint) bounds.extend([startPoint.lat, startPoint.lon]);
-  map.fitBounds(bounds, {padding:[35,35]});
-}
-
-function setLoadStatus(text){
-  const el = document.getElementById("loadStatus");
-  el.innerHTML = `<span class="dot"></span> ${esc(text)}`;
-}
-
-function updateLoadedStatus(prefixText){
-  const total = ladestellen.length;
-  const withCoords = ladestellen.filter(x => isFinite(x.lat) && isFinite(x.lon)).length;
-  const missingCoords = total - withCoords;
-  const multiAvv = ladestellen.filter(x => x.avvList.length > 1).length;
-
-  const text = prefixText || `✅ Ladestellen ${total} · mit Koordinaten ${withCoords} · offen ${missingCoords} · Multi-AVV ${multiAvv}`;
-  setLoadStatus(text);
-}
-
-function applyThemeFromLS(){
-  const t = loadLS(LS_THEME_KEY, "light");
-  if(t === "dark") document.body.classList.add("dark");
-}
-
-function getInputs(){
-  return {
-    supplierQuery: str(document.getElementById("supplierQuery").value).trim(),
-    behandlung: str(document.getElementById("treatment").value).trim(),
-    avv: str(document.getElementById("avvSelect").value).trim(),
-    qtyT: Math.max(0.1, toNum(document.getElementById("qtyT").value) || 24),
-    freightPerKm: toNum(document.getElementById("freightPerKm").value) || 1.85,
-    calcMode: str(document.getElementById("calcMode").value).trim() || "targetEk",
-    targetValue: toNum(document.getElementById("targetValue").value)
-  };
 }
 
 function buildStationGeocodeQuery(row){
@@ -1430,7 +1605,7 @@ function buildStationGeocodeQuery(row){
   return unique.join(", ");
 }
 
-function getStationGeoKey(row, idx){
+function getStationRowKey(row, idx){
   const keyParts = [
     str(row["firma"]).trim(),
     str(row["ladestelle"]).trim(),
@@ -1485,6 +1660,18 @@ function sleep(ms){
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function getInputs(){
+  return {
+    supplierQuery: str(document.getElementById("supplierQuery").value).trim(),
+    behandlung: str(document.getElementById("treatment").value).trim(),
+    avv: str(document.getElementById("avvSelect").value).trim(),
+    qtyT: Math.max(0.1, toNum(document.getElementById("qtyT").value) || 24),
+    freightPerKm: toNum(document.getElementById("freightPerKm").value) || 1.85,
+    calcMode: str(document.getElementById("calcMode").value).trim() || "targetEk",
+    targetValue: toNum(document.getElementById("targetValue").value)
+  };
+}
+
 function toNum(v){
   if(v===null || v===undefined) return NaN;
   if(typeof v==="number") return v;
@@ -1530,6 +1717,7 @@ function haversineKm(lat1, lon1, lat2, lon2){
     Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*(Math.sin(dLon/2)**2);
   return 2*R*Math.asin(Math.sqrt(a));
 }
+
 </script>
 </body>
 </html>
