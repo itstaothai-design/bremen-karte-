@@ -479,11 +479,11 @@ const URLS = {
   avv: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=avv`
 };
 
-const LS_THEME_KEY = "wasteMap_theme_v11";
-const LS_PANEL_POS_KEY = "wasteMap_panelPos_v11";
-const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v11";
-const LS_ROUTE_CACHE = "wasteMap_routeCache_v9";
-const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v8";
+const LS_THEME_KEY = "wasteMap_theme_v12";
+const LS_PANEL_POS_KEY = "wasteMap_panelPos_v12";
+const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v12";
+const LS_ROUTE_CACHE = "wasteMap_routeCache_v10";
+const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v9";
 
 let map;
 let isMobile = false;
@@ -882,15 +882,16 @@ async function loadLadestellen(){
   const rows = await parseCsv(URLS.ladestellen);
 
   ladestellen = rows.map((r, idx)=>{
-   const avvJoined = getAllFilledValues(r, [
-  "avv_erlaubt",
-  "avv erlaubt",
-  "avv_liste",
-  "avv liste",
-  "avv-liste",
-  "avv",
-  "avvs"
-]).map(v => str(v).trim()).filter(Boolean).join(";");
+    const avvJoined = getAllFilledValues(r, [
+      "avv_erlaubt",
+      "avv erlaubt",
+      "avv_liste",
+      "avv liste",
+      "avv-liste",
+      "avv",
+      "avvs"
+    ]).map(v => str(v).trim()).filter(Boolean).join(";");
+
     const behandlung = str(getFirstFilledValue(r, ["behandlung"])).trim();
     const firma = str(getFirstFilledValue(r, ["firma"])).trim();
     const ladestelle = str(getFirstFilledValue(r, ["ladestelle"])).trim();
@@ -978,7 +979,7 @@ function renderStations(results=null){
     const popupText = `
       <b>${esc(x.firma || "—")}</b><br>
       ${esc(x.ladestelle || "—")}<br>
-      <small>AVV: ${esc(x.avvList.join(", ") || "—")} · ${esc(x.behandlung || "—")} · Basis: ${fmt(x.preisBasis)} €/t</small>
+      <small>AVV: ${esc((x.avvList && x.avvList.length ? x.avvList.join(", ") : x.avvRaw) || "—")} · ${esc(x.behandlung || "—")} · Basis: ${fmt(x.preisBasis)} €/t</small>
     `;
 
     m.bindPopup(popupText);
@@ -999,7 +1000,7 @@ function hasUsableCoords(x){
   return isFinite(toNum(x.lat)) && isFinite(toNum(x.lon));
 }
 function hasUsableAvv(x){
-  return Array.isArray(x.avvList) && x.avvList.length > 0;
+  return /\d/.test(str(x.avvRaw));
 }
 function hasUsableTreatment(x){
   return !!str(x.behandlung).trim();
@@ -1008,7 +1009,6 @@ function hasUsableTreatment(x){
 function getRenderableStations(){
   return ladestellen.filter(x =>
     hasUsableCoords(x) &&
-    hasUsableAvv(x) &&
     hasUsableTreatment(x)
   );
 }
@@ -1030,14 +1030,15 @@ function getIssueRows(){
 
 function refreshLoadStatus(textOverride=null){
   const total = ladestellen.length;
+  const missingGeo = getMissingGeoRows().length;
+  const missingTreatment = getMissingTreatmentRows().length;
+  const missingAvv = getMissingAvvRows().length;
 
-  const openSet = new Set([
+  const open = new Set([
     ...getMissingGeoRows().map(x=>x.id),
-    ...getMissingAvvRows().map(x=>x.id),
     ...getMissingTreatmentRows().map(x=>x.id)
-  ]);
+  ]).size;
 
-  const open = openSet.size;
   const loaded = total - open;
 
   const pill = document.getElementById("loadStatus");
@@ -1052,7 +1053,7 @@ function refreshLoadStatus(textOverride=null){
     <span>•</span>
     <span>offen <span class="statusNum statusOpen">${open}</span></span>
     <span>•</span>
-    <span>AVV <span class="statusNum">${avvRows.length}</span></span>
+    <span>AVV offen <span class="statusNum">${missingAvv}</span></span>
   `;
 }
 
@@ -1224,8 +1225,8 @@ async function runStationGeocode(){
   const missing = getMissingGeoRows().filter(x => x.geoQuery);
 
   if(!missing.length){
-    refreshLoadStatus();
-    openMissingPanel();
+    updateLoadStatus("Keine offenen Geocodes");
+    setTimeout(refreshLoadStatus, 1500);
     return;
   }
 
@@ -1254,11 +1255,12 @@ async function runStationGeocode(){
 
   renderStations(lastResults);
   refreshLoadStatus();
-  openMissingPanel();
 
-  if(fail){
-    updateLoadStatus(`Geocoding fertig · gefunden ${ok} · offen ${fail}`);
-    setTimeout(refreshLoadStatus, 1800);
+  updateLoadStatus(`Geocoding fertig · gefunden ${ok} · offen ${fail}`);
+  setTimeout(refreshLoadStatus, 1800);
+
+  if(fail > 0){
+    openMissingPanel();
   }
 }
 
@@ -1474,7 +1476,7 @@ async function calculate(){
 
   for(const x of getRenderableStations()){
     if(normText(x.behandlung) !== normText(behandlung)) continue;
-    if(!x.avvList.includes(selectedAvvNorm)) continue;
+    if(!stationAcceptsAvv(x, selectedAvvNorm)) continue;
 
     const kmAir = haversineKm(startPoint.lat, startPoint.lon, x.lat, x.lon);
     const preisBasis = isFinite(x.preisBasis) ? x.preisBasis : 0;
@@ -1557,7 +1559,7 @@ function renderResultsTable(results, inputs){
       <td>
         <b>${esc(row.entity.firma || "—")}</b><br>
         <span class="small">${esc(row.entity.ladestelle)}</span><br>
-        <span class="small">AVV ${esc(row.entity.avvList.join(", "))} · ${esc(row.entity.behandlung)} · Basis ${fmt(row.preisBasis)} €/t · CO2_mod ${esc(row.co2Mod)}</span>
+        <span class="small">AVV ${esc((row.entity.avvList && row.entity.avvList.length ? row.entity.avvList.join(", ") : row.entity.avvRaw) || "—")} · ${esc(row.entity.behandlung)} · Basis ${fmt(row.preisBasis)} €/t · CO2_mod ${esc(row.co2Mod)}</span>
       </td>
       <td>${fmt(row.calcKm,0)}</td>
       <td>${valueLine}</td>
@@ -1675,7 +1677,7 @@ function showDetail(row){
     <div class="kv"><span class="k">Firma</span><span class="v">${esc(row.entity.firma || "—")}</span></div>
     <div class="kv"><span class="k">Ladestelle</span><span class="v">${esc(row.entity.ladestelle)}</span></div>
 
-    <div class="kv"><span class="k">AVV</span><span class="v">${esc(row.entity.avvList.join(", "))}</span></div>
+    <div class="kv"><span class="k">AVV</span><span class="v">${esc((row.entity.avvList && row.entity.avvList.length ? row.entity.avvList.join(", ") : row.entity.avvRaw) || "—")}</span></div>
     <div class="kv"><span class="k">Behandlung</span><span class="v">${esc(row.entity.behandlung)}</span></div>
 
     <div class="kv"><span class="k">KM</span><span class="v">${fmt(row.routeKm,2)} km</span></div>
@@ -1754,21 +1756,6 @@ function getStationRowKey(row, idx){
   return "row__" + normText(keyParts);
 }
 
-function parseAvvList(value){
-  const raw = str(value).trim();
-  if(!raw) return [];
-
-  return raw
-    .replace(/\r/g, "\n")
-    .split(/[;\n,|/]+/g)
-    .map(v => str(v).trim())
-    .filter(Boolean)
-    .map(v => v.replace(/\D/g, ""))
-    .filter(Boolean)
-    .map(v => v.length === 5 ? v.padStart(6, "0") : v)
-    .filter(v => v.length === 6);
-}
-
 function cleanAvvCode(v){
   let s = str(v).replace(/\D/g, "");
   if(s.length === 5) s = s.padStart(6, "0");
@@ -1776,10 +1763,51 @@ function cleanAvvCode(v){
 }
 
 function normAvv(v){
-  let s = str(v).replace(/\D/g, "");
-  if(s.length === 5) s = s.padStart(6, "0");
-  return s.length === 6 ? s : "";
+  return cleanAvvCode(v);
 }
+
+function parseAvvList(value){
+  const raw = str(value).trim();
+  if(!raw) return [];
+
+  const found = [];
+  const seen = new Set();
+
+  const spacedMatches = raw.match(/\d{2}\s*\d{2}\s*\d{2}/g) || [];
+  for(const m of spacedMatches){
+    const code = cleanAvvCode(m);
+    if(code && !seen.has(code)){
+      seen.add(code);
+      found.push(code);
+    }
+  }
+
+  const plainMatches = raw.match(/\d{5,6}/g) || [];
+  for(const m of plainMatches){
+    const code = cleanAvvCode(m);
+    if(code && !seen.has(code)){
+      seen.add(code);
+      found.push(code);
+    }
+  }
+
+  return found;
+}
+
+function stationAcceptsAvv(station, selectedAvv){
+  const selected = cleanAvvCode(selectedAvv);
+  if(!selected) return false;
+
+  const raw = str(station.avvRaw).trim();
+  if(!raw) return false;
+
+  const codes = parseAvvList(raw);
+  if(codes.includes(selected)) return true;
+
+  const selectedNoZero = selected.replace(/^0+/, "");
+  return codes.some(code => code.replace(/^0+/, "") === selectedNoZero);
+}
+
 function sleep(ms){
   return new Promise(resolve => setTimeout(resolve, ms));
 }
