@@ -201,17 +201,15 @@
       font:14px/1.25 system-ui,-apple-system,Segoe UI,Roboto,Arial;
       color:var(--ui-text);
     }
-   .missPanel.hidden{display:none;}
-.missPanel.dragging{
-  transition:none !important;
-}
+    .missPanel.hidden{display:none;}
+    .missPanel.dragging{transition:none !important;}
+
     .missHead{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:10px 12px;background:var(--ui-soft);border-bottom:1px solid var(--ui-border);
-  font-weight:900;
-  cursor:move;
-  user-select:none;
-}
+      display:flex;align-items:center;justify-content:space-between;
+      padding:10px 12px;background:var(--ui-soft);border-bottom:1px solid var(--ui-border);
+      font-weight:900;
+      cursor:move;
+      user-select:none;
     }
     .missHeadActions{display:flex;gap:8px;align-items:center}
     .missTabs{display:flex;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--ui-border)}
@@ -483,11 +481,11 @@ const URLS = {
   avv: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=avv`
 };
 
-const LS_THEME_KEY = "wasteMap_theme_v6";
-const LS_PANEL_POS_KEY = "wasteMap_panelPos_v6";
-const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v6";
-const LS_ROUTE_CACHE = "wasteMap_routeCache_v4";
-const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v3";
+const LS_THEME_KEY = "wasteMap_theme_v7";
+const LS_PANEL_POS_KEY = "wasteMap_panelPos_v7";
+const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v7";
+const LS_ROUTE_CACHE = "wasteMap_routeCache_v5";
+const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v4";
 
 let map;
 let isMobile = false;
@@ -531,11 +529,11 @@ async function init(){
 
   setTimeout(()=>map.invalidateSize(), 100);
 
- initUI();
-initMobileUI();
-initPanelDragDesktopOnly();
-initMissingPanelDrag();
-applyResponsiveLayout();
+  initUI();
+  initMobileUI();
+  initPanelDragDesktopOnly();
+  initMissingPanelDrag();
+  applyResponsiveLayout();
   window.addEventListener("resize", applyResponsiveLayout);
 
   updateLoadStatus("Lade Tabellen …");
@@ -747,6 +745,7 @@ function initPanelDragDesktopOnly(){
     saveLS(LS_PANEL_POS_KEY, {x:r.left, y:r.top});
   });
 }
+
 function initMissingPanelDrag(){
   const panel = document.getElementById("missPanel");
   const header = panel.querySelector(".missHead");
@@ -796,7 +795,7 @@ function initMissingPanelDrag(){
     dragging = false;
     panel.classList.remove("dragging");
   });
-}  
+}
 
 function parseCsv(url){
   return new Promise((resolve, reject)=>{
@@ -848,7 +847,7 @@ async function loadLadestellen(){
 
   ladestellen = rows.map((r, idx)=>{
     const avvRaw = str(r["avv_erlaubt"] ?? r["avv"] ?? r["avvs"] ?? "").trim();
-    const avvList = parseAvvList(avvRaw);
+    const avvListParsed = parseAvvList(avvRaw);
 
     let lat = toNum(r["lat"]);
     let lon = toNum(r["lon"]);
@@ -857,14 +856,14 @@ async function loadLadestellen(){
     const queryKey = "station__" + normText(buildStationGeocodeQuery(r));
 
     if((!isFinite(lat) || !isFinite(lon)) && stationGeoCache[rowKey]){
-      lat = stationGeoCache[rowKey].lat;
-      lon = stationGeoCache[rowKey].lon;
+      lat = toNum(stationGeoCache[rowKey].lat);
+      lon = toNum(stationGeoCache[rowKey].lon);
     }else if((!isFinite(lat) || !isFinite(lon)) && stationGeoCache[queryKey]){
-      lat = stationGeoCache[queryKey].lat;
-      lon = stationGeoCache[queryKey].lon;
+      lat = toNum(stationGeoCache[queryKey].lat);
+      lon = toNum(stationGeoCache[queryKey].lon);
     }
 
-        return {
+    return {
       id: "L"+idx,
       rowIndex: idx + 2,
       firma: str(r["firma"]).trim(),
@@ -873,12 +872,14 @@ async function loadLadestellen(){
       lon: toNum(lon),
       preisBasis: toNum(r["preis_basis"]),
       avvRaw,
-      avvList: avvList.length ? avvList : parseAvvList(avvRaw),
+      avvList: avvListParsed,
       behandlung: str(r["behandlung"]).trim(),
       co2Mod: normText(str(r["co2_mod"]).trim()),
       geoQuery: buildStationGeocodeQuery(r),
       raw: r
     };
+  });
+}
 
 function fillAvvDropdown(){
   const sel = document.getElementById("avvSelect");
@@ -951,12 +952,10 @@ function renderStations(results=null){
 function hasUsableCoords(x){
   return isFinite(toNum(x.lat)) && isFinite(toNum(x.lon));
 }
-
 function hasUsableAvv(x){
   if(Array.isArray(x.avvList) && x.avvList.length > 0) return true;
   return parseAvvList(x.avvRaw).length > 0;
 }
-
 function hasUsableTreatment(x){
   return !!str(x.behandlung).trim();
 }
@@ -1013,7 +1012,6 @@ function refreshLoadStatus(textOverride=null){
     <span>•</span>
     <span>AVV <span class="statusNum">${avvRows.length}</span></span>
   `;
-
   pill.title = `Fehlend: Koordinaten ${missingGeo}, AVV ${missingAvv}, Behandlung ${missingTreatment}`;
 }
 
@@ -1074,7 +1072,7 @@ function renderMissingPanel(){
             Zeile: ${esc(String(r.rowIndex))}<br>
             Behandlung: ${esc(r.behandlung || "—")}<br>
             AVV: ${esc(r.avvRaw || "—")}<br>
-            Lat/Lon: ${isFinite(r.lat) && isFinite(r.lon) ? `${fmt(r.lat,5)}, ${fmt(r.lon,5)}` : "fehlt"}<br>
+            Lat/Lon: ${hasUsableCoords(r) ? `${fmt(r.lat,5)}, ${fmt(r.lon,5)}` : "fehlt"}<br>
             Suchtext: ${esc(r.geoQuery || "—")}
           </div>
         </div>
@@ -1096,13 +1094,13 @@ function exportMissingCsv(){
     ladestelle: r.ladestelle,
     behandlung: r.behandlung,
     avv_erlaubt: r.avvRaw,
-    lat: isFinite(r.lat) ? r.lat : "",
-    lon: isFinite(r.lon) ? r.lon : "",
+    lat: hasUsableCoords(r) ? r.lat : "",
+    lon: hasUsableCoords(r) ? r.lon : "",
     geo_query: r.geoQuery,
     problem: [
-      (!isFinite(r.lat) || !isFinite(r.lon)) ? "keine_koordinaten" : "",
-      (!r.avvList.length) ? "keine_avv" : "",
-      (!str(r.behandlung).trim()) ? "keine_behandlung" : ""
+      !hasUsableCoords(r) ? "keine_koordinaten" : "",
+      !hasUsableAvv(r) ? "keine_avv" : "",
+      !hasUsableTreatment(r) ? "keine_behandlung" : ""
     ].filter(Boolean).join("|")
   }));
 
@@ -1718,34 +1716,58 @@ function parseAvvList(value){
   const raw = str(value).trim();
   if(!raw) return [];
 
-  const parts = raw
+  const chunks = raw
     .replace(/\r/g, "\n")
     .split(/[\n;|/]+/g)
-    .flatMap(part => String(part).split(","))
-    .map(x => cleanAvvCode(x))
+    .map(s => s.trim())
     .filter(Boolean);
+
+  const parts = [];
+  for(const chunk of chunks){
+    const decimalLike = chunk.match(/\d{6}\.0+\b/g);
+    if(decimalLike && decimalLike.length){
+      for(const x of decimalLike) parts.push(cleanAvvCode(x));
+      const rest = chunk.replace(/\d{6}\.0+\b/g, " ");
+      rest.split(/[,]+/g).forEach(x => {
+        const c = cleanAvvCode(x);
+        if(c) parts.push(c);
+      });
+      continue;
+    }
+
+    chunk.split(/[,]+/g).forEach(x => {
+      const c = cleanAvvCode(x);
+      if(c) parts.push(c);
+    });
+  }
 
   const unique = [];
   const seen = new Set();
-
   for(const code of parts){
     const k = normAvv(code);
     if(!k || seen.has(k)) continue;
     seen.add(k);
     unique.push(code);
   }
-
   return unique;
 }
+
 function cleanAvvCode(v){
   let s = str(v).trim();
   if(!s) return "";
 
-  s = s.replace(/,/g, ".");
-  s = s.replace(/\.0+$/g, "");
-  s = s.replace(/[^\d]/g, "");
+  const decimalMatch = s.match(/(\d{6})[.,]0+$/);
+  if(decimalMatch) return decimalMatch[1];
 
-  if(s.length > 6){
+  const exactSix = s.match(/\b(\d{6})\b/);
+  if(exactSix) return exactSix[1];
+
+  s = s.replace(/[^\d]/g, "");
+  if(!s) return "";
+
+  if(s.length === 7 && s.endsWith("0")){
+    s = s.slice(0, 6);
+  }else if(s.length > 6){
     s = s.slice(0, 6);
   }
 
