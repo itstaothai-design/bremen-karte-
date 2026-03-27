@@ -882,16 +882,11 @@ async function loadLadestellen(){
   const rows = await parseCsv(URLS.ladestellen);
 
   ladestellen = rows.map((r, idx)=>{
-    const avvJoined = getAllFilledValues(r, [
-      "avv_erlaubt",
-      "avv erlaubt",
-      "avv_liste",
-      "avv liste",
-      "avv-liste",
-      "avv",
-      "avvs"
-    ]).map(v => str(v).trim()).filter(Boolean).join(";");
-
+  const avvJoined = Object.entries(r)
+  .filter(([k,v]) => /avv/i.test(k))
+  .map(([k,v]) => str(v).trim())
+  .filter(Boolean)
+  .join(";");
     const behandlung = str(getFirstFilledValue(r, ["behandlung"])).trim();
     const firma = str(getFirstFilledValue(r, ["firma"])).trim();
     const ladestelle = str(getFirstFilledValue(r, ["ladestelle"])).trim();
