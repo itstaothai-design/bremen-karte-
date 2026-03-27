@@ -479,11 +479,11 @@ const URLS = {
   avv: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=avv`
 };
 
-const LS_THEME_KEY = "wasteMap_theme_v9";
-const LS_PANEL_POS_KEY = "wasteMap_panelPos_v9";
-const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v9";
-const LS_ROUTE_CACHE = "wasteMap_routeCache_v7";
-const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v6";
+const LS_THEME_KEY = "wasteMap_theme_v10";
+const LS_PANEL_POS_KEY = "wasteMap_panelPos_v10";
+const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v10";
+const LS_ROUTE_CACHE = "wasteMap_routeCache_v8";
+const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v7";
 
 let map;
 let isMobile = false;
@@ -1767,12 +1767,14 @@ function parseAvvList(value){
 
   const unique = [];
   const seen = new Set();
+
   for(const code of parts){
     const k = normAvv(code);
     if(!k || seen.has(k)) continue;
     seen.add(k);
-    unique.push(code);
+    unique.push(k);
   }
+
   return unique;
 }
 
@@ -1780,8 +1782,16 @@ function cleanAvvCode(v){
   let s = str(v).trim();
   if(!s) return "";
 
+  s = s.replace(/\D/g, "");
+  if(!s) return "";
+
+  if(s.length === 5) return s.padStart(6, "0");
+  if(s.length === 6) return s;
+
   const six = s.match(/\d{6}/);
-  return six ? six[0] : "";
+  if(six) return six[0];
+
+  return "";
 }
 
 function normAvv(v){
