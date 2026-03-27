@@ -479,11 +479,11 @@ const URLS = {
   avv: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=avv`
 };
 
-const LS_THEME_KEY = "wasteMap_theme_v8";
-const LS_PANEL_POS_KEY = "wasteMap_panelPos_v8";
-const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v8";
-const LS_ROUTE_CACHE = "wasteMap_routeCache_v6";
-const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v5";
+const LS_THEME_KEY = "wasteMap_theme_v9";
+const LS_PANEL_POS_KEY = "wasteMap_panelPos_v9";
+const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v9";
+const LS_ROUTE_CACHE = "wasteMap_routeCache_v7";
+const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v6";
 
 let map;
 let isMobile = false;
@@ -795,6 +795,15 @@ function initMissingPanelDrag(){
   });
 }
 
+function normalizeHeaderName(h){
+  return String(h || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/ä/g,"ae").replace(/ö/g,"oe").replace(/ü/g,"ue").replace(/ß/g,"ss");
+}
+
 function parseCsv(url){
   return new Promise((resolve, reject)=>{
     Papa.parse(url, {
@@ -802,7 +811,7 @@ function parseCsv(url){
       header:true,
       skipEmptyLines:true,
       delimiter:"",
-      transformHeader:(h)=>String(h||"").trim().toLowerCase(),
+      transformHeader:(h)=>normalizeHeaderName(h),
       complete:(res)=>{
         const first = res?.data?.[0];
         const keys = first ? Object.keys(first) : [];
@@ -812,7 +821,7 @@ function parseCsv(url){
             header:true,
             skipEmptyLines:true,
             delimiter:";",
-            transformHeader:(h)=>String(h||"").trim().toLowerCase(),
+            transformHeader:(h)=>normalizeHeaderName(h),
             complete:(res2)=>resolve(res2.data),
             error:reject
           });
@@ -827,20 +836,40 @@ function parseCsv(url){
 
 function findValueByHeader(row, possibleKeys){
   const keys = Object.keys(row || {});
+  const normalizedKeys = keys.map(k => ({ raw:k, norm:normalizeHeaderName(k) }));
+
   for(const wanted of possibleKeys){
-    const exact = keys.find(k => String(k).trim().toLowerCase() === wanted.toLowerCase());
-    if(exact !== undefined) return row[exact];
+    const wantedNorm = normalizeHeaderName(wanted);
+    const hit = normalizedKeys.find(k => k.norm === wantedNorm);
+    if(hit) return row[hit.raw];
   }
   return "";
+}
+
+function getFirstFilledValue(row, possibleKeys){
+  for(const key of possibleKeys){
+    const val = findValueByHeader(row, [key]);
+    if(String(val ?? "").trim() !== "") return val;
+  }
+  return "";
+}
+
+function getAllFilledValues(row, possibleKeys){
+  const values = [];
+  for(const key of possibleKeys){
+    const val = findValueByHeader(row, [key]);
+    if(String(val ?? "").trim() !== "") values.push(val);
+  }
+  return values;
 }
 
 async function loadAvv(){
   const rows = await parseCsv(URLS.avv);
 
   avvRows = rows.map(r=>({
-    avv: cleanAvvCode(findValueByHeader(r, ["avv"])),
-    beschreibung: str(findValueByHeader(r, ["beschreibung","bezeichnung","name"])).trim(),
-    co2: toNum(findValueByHeader(r, ["co2"]))
+    avv: cleanAvvCode(getFirstFilledValue(r, ["avv"])),
+    beschreibung: str(getFirstFilledValue(r, ["beschreibung","bezeichnung","name"])).trim(),
+    co2: toNum(getFirstFilledValue(r, ["co2"]))
   })).filter(x=>x.avv);
 
   avvMap = new Map();
@@ -853,13 +882,22 @@ async function loadLadestellen(){
   const rows = await parseCsv(URLS.ladestellen);
 
   ladestellen = rows.map((r, idx)=>{
-    const avvRaw = str(findValueByHeader(r, ["avv_erlaubt","avv erlaubt","avv","avvs"])).trim();
-    const behandlung = str(findValueByHeader(r, ["behandlung"])).trim();
-    const firma = str(findValueByHeader(r, ["firma"])).trim();
-    const ladestelle = str(findValueByHeader(r, ["ladestelle"])).trim();
+    const avvJoined = getAllFilledValues(r, [
+      "avv_erlaubt",
+      "avv erlaubt",
+      "avv_liste",
+      "avv liste",
+      "avv-liste",
+      "avv",
+      "avvs"
+    ]).map(v => str(v).trim()).filter(Boolean).join(";");
 
-    let lat = toNum(findValueByHeader(r, ["lat","latitude"]));
-    let lon = toNum(findValueByHeader(r, ["lon","lng","longitude"]));
+    const behandlung = str(getFirstFilledValue(r, ["behandlung"])).trim();
+    const firma = str(getFirstFilledValue(r, ["firma"])).trim();
+    const ladestelle = str(getFirstFilledValue(r, ["ladestelle"])).trim();
+
+    let lat = toNum(getFirstFilledValue(r, ["lat","latitude"]));
+    let lon = toNum(getFirstFilledValue(r, ["lon","lng","longitude"]));
 
     const rowKey = getStationRowKey(r, idx);
     const queryKey = "station__" + normText(buildStationGeocodeQuery(r));
@@ -879,11 +917,11 @@ async function loadLadestellen(){
       ladestelle,
       lat,
       lon,
-      preisBasis: toNum(findValueByHeader(r, ["preis_basis","preis basis"])),
-      avvRaw,
-      avvList: parseAvvList(avvRaw),
+      preisBasis: toNum(getFirstFilledValue(r, ["preis_basis","preis basis"])),
+      avvRaw: avvJoined,
+      avvList: parseAvvList(avvJoined),
       behandlung,
-      co2Mod: normText(str(findValueByHeader(r, ["co2_mod","co2 mod"])).trim()),
+      co2Mod: normText(str(getFirstFilledValue(r, ["co2_mod","co2 mod"])).trim()),
       geoQuery: buildStationGeocodeQuery(r),
       raw: r
     };
@@ -1075,7 +1113,7 @@ function renderMissingPanel(){
           <div class="missMeta">
             Zeile: ${esc(String(r.rowIndex))}<br>
             Behandlung: ${esc(r.behandlung || "—")}<br>
-            AVV: ${esc(r.avvRaw || "—")}<br>
+            AVV-Rohwert: ${esc(r.avvRaw || "—")}<br>
             AVV-Liste: ${esc((r.avvList || []).join(", ") || "—")}<br>
             Lat/Lon: ${hasUsableCoords(r) ? `${fmt(r.lat,5)}, ${fmt(r.lon,5)}` : "fehlt"}<br>
             Suchtext: ${esc(r.geoQuery || "—")}
@@ -1098,7 +1136,7 @@ function exportMissingCsv(){
     firma: r.firma,
     ladestelle: r.ladestelle,
     behandlung: r.behandlung,
-    avv_erlaubt: r.avvRaw,
+    avv_rohwert: r.avvRaw,
     avv_liste: (r.avvList || []).join("|"),
     lat: hasUsableCoords(r) ? r.lat : "",
     lon: hasUsableCoords(r) ? r.lon : "",
@@ -1306,7 +1344,9 @@ function calcRowValues(base, usedKm, inputs){
   const targetEk = calcMode === "targetEk" ? targetValue : NaN;
   const targetMargin = calcMode === "targetMargin" ? targetValue : NaN;
   const delta = isFinite(targetEk) ? (targetEk - ekProT) : NaN;
-  const mindestEk = isFinite(targetMargin) ? (base.preisNachCo2 + freightPerT + targetMargin) : NaN;
+  const mindestEk = calcMode === "targetMargin" && isFinite(targetMargin)
+    ? (ekProT - targetMargin)
+    : NaN;
   const displayValue = calcMode === "targetMargin" ? mindestEk : ekProT;
 
   return {
@@ -1510,7 +1550,7 @@ function renderResultsTable(results, inputs){
 
   for(const row of results){
     const valueLine = calcMode === "targetMargin"
-      ? `<b>${fmt(row.mindestEk)} €/t</b><br><span class="small">Preis_Basis + CO2 + Fracht + Rohertrag</span>`
+      ? `<b>${fmt(row.mindestEk)} €/t</b><br><span class="small">EK abzüglich Ziel-Rohertrag</span>`
       : `<b>${fmt(row.ekProT)} €/t</b><br><span class="small">${fmt(row.gesamt)} € für ${fmt(qtyT,1)} t</span>`;
 
     const tr = document.createElement("tr");
@@ -1683,12 +1723,12 @@ function hideDetail(){
 
 function buildStationGeocodeQuery(row){
   const parts = [
-    findValueByHeader(row, ["ladestelle"]),
-    findValueByHeader(row, ["adresse","strasse","straße"]),
-    findValueByHeader(row, ["hausnummer"]),
-    findValueByHeader(row, ["plz"]),
-    findValueByHeader(row, ["ort","stadt"]),
-    findValueByHeader(row, ["land"]),
+    getFirstFilledValue(row, ["ladestelle"]),
+    getFirstFilledValue(row, ["adresse","strasse","straße"]),
+    getFirstFilledValue(row, ["hausnummer"]),
+    getFirstFilledValue(row, ["plz"]),
+    getFirstFilledValue(row, ["ort","stadt"]),
+    getFirstFilledValue(row, ["land"]),
     "Deutschland"
   ].map(v => str(v).trim()).filter(Boolean);
 
@@ -1705,11 +1745,11 @@ function buildStationGeocodeQuery(row){
 
 function getStationRowKey(row, idx){
   const keyParts = [
-    str(findValueByHeader(row, ["firma"])).trim(),
-    str(findValueByHeader(row, ["ladestelle"])).trim(),
-    str(findValueByHeader(row, ["adresse","strasse","straße"])).trim(),
-    str(findValueByHeader(row, ["plz"])).trim(),
-    str(findValueByHeader(row, ["ort","stadt"])).trim(),
+    str(getFirstFilledValue(row, ["firma"])).trim(),
+    str(getFirstFilledValue(row, ["ladestelle"])).trim(),
+    str(getFirstFilledValue(row, ["adresse","strasse","straße"])).trim(),
+    str(getFirstFilledValue(row, ["plz"])).trim(),
+    str(getFirstFilledValue(row, ["ort","stadt"])).trim(),
     String(idx)
   ].join("|");
   return "row__" + normText(keyParts);
