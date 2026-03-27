@@ -479,11 +479,11 @@ const URLS = {
   avv: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=avv`
 };
 
-const LS_THEME_KEY = "wasteMap_theme_v12";
-const LS_PANEL_POS_KEY = "wasteMap_panelPos_v12";
-const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v12";
-const LS_ROUTE_CACHE = "wasteMap_routeCache_v10";
-const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v9";
+const LS_THEME_KEY = "wasteMap_theme_v13";
+const LS_PANEL_POS_KEY = "wasteMap_panelPos_v13";
+const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v13";
+const LS_ROUTE_CACHE = "wasteMap_routeCache_v11";
+const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v10";
 
 let map;
 let isMobile = false;
@@ -862,6 +862,45 @@ function getAllFilledValues(row, possibleKeys){
   }
   return values;
 }
+
+function cleanAvvCode(v){
+  let s = str(v).replace(/\D/g, "");
+  if(s.length === 5) s = s.padStart(6, "0");
+  return s.length === 6 ? s : "";
+}
+
+function normAvv(v){
+  return cleanAvvCode(v);
+}
+
+function parseAvvList(value){
+  const raw = str(value).trim();
+  if(!raw) return [];
+
+  const found = [];
+  const seen = new Set();
+
+  const spacedMatches = raw.match(/\d{2}\s*\d{2}\s*\d{2}/g) || [];
+  for(const m of spacedMatches){
+    const code = cleanAvvCode(m);
+    if(code && !seen.has(code)){
+      seen.add(code);
+      found.push(code);
+    }
+  }
+
+  const plainMatches = raw.match(/\d{5,6}/g) || [];
+  for(const m of plainMatches){
+    const code = cleanAvvCode(m);
+    if(code && !seen.has(code)){
+      seen.add(code);
+      found.push(code);
+    }
+  }
+
+  return found;
+}
+
 function extractValidAvvsFromRow(row){
   const validAvvs = new Set(avvRows.map(x => cleanAvvCode(x.avv)).filter(Boolean));
 
@@ -886,6 +925,23 @@ function extractValidAvvsFromRow(row){
 
   return found;
 }
+
+function stationAcceptsAvv(station, selectedAvv){
+  const selected = cleanAvvCode(selectedAvv);
+  if(!selected) return false;
+
+  if(Array.isArray(station.avvList) && station.avvList.includes(selected)) return true;
+
+  const raw = str(station.avvRaw).trim();
+  if(!raw) return false;
+
+  const codes = parseAvvList(raw);
+  if(codes.includes(selected)) return true;
+
+  const selectedNoZero = selected.replace(/^0+/, "");
+  return codes.some(code => code.replace(/^0+/, "") === selectedNoZero);
+}
+
 async function loadAvv(){
   const rows = await parseCsv(URLS.avv);
 
@@ -905,11 +961,20 @@ async function loadLadestellen(){
   const rows = await parseCsv(URLS.ladestellen);
 
   ladestellen = rows.map((r, idx)=>{
-  const avvJoined = Object.entries(r)
-  .filter(([k,v]) => /avv/i.test(k))
-  .map(([k,v]) => str(v).trim())
-  .filter(Boolean)
-  .join(";");
+    const detectedAvvs = extractValidAvvsFromRow(r);
+
+    const avvJoinedByNames = getAllFilledValues(r, [
+      "avv_erlaubt",
+      "avv erlaubt",
+      "avv_liste",
+      "avv liste",
+      "avv-liste",
+      "avv",
+      "avvs"
+    ]).map(v => str(v).trim()).filter(Boolean).join(";");
+
+    const avvJoined = detectedAvvs.length ? detectedAvvs.join(";") : avvJoinedByNames;
+
     const behandlung = str(getFirstFilledValue(r, ["behandlung"])).trim();
     const firma = str(getFirstFilledValue(r, ["firma"])).trim();
     const ladestelle = str(getFirstFilledValue(r, ["ladestelle"])).trim();
@@ -937,7 +1002,7 @@ async function loadLadestellen(){
       lon,
       preisBasis: toNum(getFirstFilledValue(r, ["preis_basis","preis basis"])),
       avvRaw: avvJoined,
-      avvList: parseAvvList(avvJoined),
+      avvList: detectedAvvs.length ? detectedAvvs : parseAvvList(avvJoinedByNames),
       behandlung,
       co2Mod: normText(str(getFirstFilledValue(r, ["co2_mod","co2 mod"])).trim()),
       geoQuery: buildStationGeocodeQuery(r),
@@ -1048,16 +1113,15 @@ function getIssueRows(){
 
 function refreshLoadStatus(textOverride=null){
   const total = ladestellen.length;
-  const missingGeo = getMissingGeoRows().length;
-  const missingTreatment = getMissingTreatmentRows().length;
-  const missingAvv = getMissingAvvRows().length;
 
-  const open = new Set([
+  const openSet = new Set([
     ...getMissingGeoRows().map(x=>x.id),
     ...getMissingTreatmentRows().map(x=>x.id)
-  ]).size;
+  ]);
 
+  const open = openSet.size;
   const loaded = total - open;
+  const missingAvv = getMissingAvvRows().length;
 
   const pill = document.getElementById("loadStatus");
   if(textOverride){
@@ -1772,58 +1836,6 @@ function getStationRowKey(row, idx){
     String(idx)
   ].join("|");
   return "row__" + normText(keyParts);
-}
-
-function cleanAvvCode(v){
-  let s = str(v).replace(/\D/g, "");
-  if(s.length === 5) s = s.padStart(6, "0");
-  return s.length === 6 ? s : "";
-}
-
-function normAvv(v){
-  return cleanAvvCode(v);
-}
-
-function parseAvvList(value){
-  const raw = str(value).trim();
-  if(!raw) return [];
-
-  const found = [];
-  const seen = new Set();
-
-  const spacedMatches = raw.match(/\d{2}\s*\d{2}\s*\d{2}/g) || [];
-  for(const m of spacedMatches){
-    const code = cleanAvvCode(m);
-    if(code && !seen.has(code)){
-      seen.add(code);
-      found.push(code);
-    }
-  }
-
-  const plainMatches = raw.match(/\d{5,6}/g) || [];
-  for(const m of plainMatches){
-    const code = cleanAvvCode(m);
-    if(code && !seen.has(code)){
-      seen.add(code);
-      found.push(code);
-    }
-  }
-
-  return found;
-}
-
-function stationAcceptsAvv(station, selectedAvv){
-  const selected = cleanAvvCode(selectedAvv);
-  if(!selected) return false;
-
-  const raw = str(station.avvRaw).trim();
-  if(!raw) return false;
-
-  const codes = parseAvvList(raw);
-  if(codes.includes(selected)) return true;
-
-  const selectedNoZero = selected.replace(/^0+/, "");
-  return codes.some(code => code.replace(/^0+/, "") === selectedNoZero);
 }
 
 function sleep(ms){
