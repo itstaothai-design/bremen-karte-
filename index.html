@@ -862,7 +862,30 @@ function getAllFilledValues(row, possibleKeys){
   }
   return values;
 }
+function extractValidAvvsFromRow(row){
+  const validAvvs = new Set(avvRows.map(x => cleanAvvCode(x.avv)).filter(Boolean));
 
+  const rawText = Object.values(row || {})
+    .map(v => str(v))
+    .join(" ; ");
+
+  if(!rawText.trim()) return [];
+
+  const matches = rawText.match(/\d{5,6}|\d{2}\s*\d{2}\s*\d{2}/g) || [];
+  const found = [];
+  const seen = new Set();
+
+  for(const m of matches){
+    const code = cleanAvvCode(m);
+    if(!code) continue;
+    if(!validAvvs.has(code)) continue;
+    if(seen.has(code)) continue;
+    seen.add(code);
+    found.push(code);
+  }
+
+  return found;
+}
 async function loadAvv(){
   const rows = await parseCsv(URLS.avv);
 
