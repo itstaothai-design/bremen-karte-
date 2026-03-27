@@ -882,16 +882,15 @@ async function loadLadestellen(){
   const rows = await parseCsv(URLS.ladestellen);
 
   ladestellen = rows.map((r, idx)=>{
-    const avvJoined = getAllFilledValues(r, [
-      "avv_erlaubt",
-      "avv erlaubt",
-      "avv_liste",
-      "avv liste",
-      "avv-liste",
-      "avv",
-      "avvs"
-    ]).map(v => str(v).trim()).filter(Boolean).join(" ; ");
-
+   const avvJoined = getAllFilledValues(r, [
+  "avv_erlaubt",
+  "avv erlaubt",
+  "avv_liste",
+  "avv liste",
+  "avv-liste",
+  "avv",
+  "avvs"
+]).map(v => str(v).trim()).filter(Boolean).join(";");
     const behandlung = str(getFirstFilledValue(r, ["behandlung"])).trim();
     const firma = str(getFirstFilledValue(r, ["firma"])).trim();
     const ladestelle = str(getFirstFilledValue(r, ["ladestelle"])).trim();
@@ -1475,7 +1474,7 @@ async function calculate(){
 
   for(const x of getRenderableStations()){
     if(normText(x.behandlung) !== normText(behandlung)) continue;
-    if(!x.avvList.some(code => normAvv(code) === selectedAvvNorm)) continue;
+    if(!x.avvList.includes(selectedAvvNorm)) continue;
 
     const kmAir = haversineKm(startPoint.lat, startPoint.lon, x.lat, x.lon);
     const preisBasis = isFinite(x.preisBasis) ? x.preisBasis : 0;
@@ -1759,48 +1758,28 @@ function parseAvvList(value){
   const raw = str(value).trim();
   if(!raw) return [];
 
-  const found = [];
-  const seen = new Set();
-
-  const spacedMatches = raw.match(/\d{2}\s*\d{2}\s*\d{2}/g) || [];
-  for(const m of spacedMatches){
-    const code = m.replace(/\D/g, "");
-    const clean = cleanAvvCode(code);
-    if(clean && !seen.has(clean)){
-      seen.add(clean);
-      found.push(clean);
-    }
-  }
-
-  const plainMatches = raw.match(/\d{5,6}/g) || [];
-  for(const m of plainMatches){
-    const clean = cleanAvvCode(m);
-    if(clean && !seen.has(clean)){
-      seen.add(clean);
-      found.push(clean);
-    }
-  }
-
-  return found;
+  return raw
+    .replace(/\r/g, "\n")
+    .split(/[;\n,|/]+/g)
+    .map(v => str(v).trim())
+    .filter(Boolean)
+    .map(v => v.replace(/\D/g, ""))
+    .filter(Boolean)
+    .map(v => v.length === 5 ? v.padStart(6, "0") : v)
+    .filter(v => v.length === 6);
 }
 
 function cleanAvvCode(v){
-  let s = str(v).trim();
-  if(!s) return "";
-
-  s = s.replace(/\D/g, "");
-  if(!s) return "";
-
-  if(s.length === 5) return s.padStart(6, "0");
-  if(s.length === 6) return s;
-
-  return "";
+  let s = str(v).replace(/\D/g, "");
+  if(s.length === 5) s = s.padStart(6, "0");
+  return s.length === 6 ? s : "";
 }
 
 function normAvv(v){
-  return cleanAvvCode(v);
+  let s = str(v).replace(/\D/g, "");
+  if(s.length === 5) s = s.padStart(6, "0");
+  return s.length === 6 ? s : "";
 }
-
 function sleep(ms){
   return new Promise(resolve => setTimeout(resolve, ms));
 }
