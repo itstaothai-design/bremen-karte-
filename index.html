@@ -479,11 +479,11 @@ const URLS = {
   avv: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=avv`
 };
 
-const LS_THEME_KEY = "wasteMap_theme_v10";
-const LS_PANEL_POS_KEY = "wasteMap_panelPos_v10";
-const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v10";
-const LS_ROUTE_CACHE = "wasteMap_routeCache_v8";
-const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v7";
+const LS_THEME_KEY = "wasteMap_theme_v11";
+const LS_PANEL_POS_KEY = "wasteMap_panelPos_v11";
+const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v11";
+const LS_ROUTE_CACHE = "wasteMap_routeCache_v9";
+const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v8";
 
 let map;
 let isMobile = false;
@@ -890,7 +890,7 @@ async function loadLadestellen(){
       "avv-liste",
       "avv",
       "avvs"
-    ]).map(v => str(v).trim()).filter(Boolean).join(";");
+    ]).map(v => str(v).trim()).filter(Boolean).join(" ; ");
 
     const behandlung = str(getFirstFilledValue(r, ["behandlung"])).trim();
     const firma = str(getFirstFilledValue(r, ["firma"])).trim();
@@ -1759,23 +1759,29 @@ function parseAvvList(value){
   const raw = str(value).trim();
   if(!raw) return [];
 
-  const parts = raw
-    .replace(/\r/g, "\n")
-    .split(/[;\n,|/]+/g)
-    .map(x => cleanAvvCode(x))
-    .filter(Boolean);
-
-  const unique = [];
+  const found = [];
   const seen = new Set();
 
-  for(const code of parts){
-    const k = normAvv(code);
-    if(!k || seen.has(k)) continue;
-    seen.add(k);
-    unique.push(k);
+  const spacedMatches = raw.match(/\d{2}\s*\d{2}\s*\d{2}/g) || [];
+  for(const m of spacedMatches){
+    const code = m.replace(/\D/g, "");
+    const clean = cleanAvvCode(code);
+    if(clean && !seen.has(clean)){
+      seen.add(clean);
+      found.push(clean);
+    }
   }
 
-  return unique;
+  const plainMatches = raw.match(/\d{5,6}/g) || [];
+  for(const m of plainMatches){
+    const clean = cleanAvvCode(m);
+    if(clean && !seen.has(clean)){
+      seen.add(clean);
+      found.push(clean);
+    }
+  }
+
+  return found;
 }
 
 function cleanAvvCode(v){
@@ -1787,9 +1793,6 @@ function cleanAvvCode(v){
 
   if(s.length === 5) return s.padStart(6, "0");
   if(s.length === 6) return s;
-
-  const six = s.match(/\d{6}/);
-  if(six) return six[0];
 
   return "";
 }
