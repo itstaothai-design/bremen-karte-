@@ -1121,7 +1121,6 @@ function refreshLoadStatus(textOverride=null){
 
   const open = openSet.size;
   const loaded = total - open;
-  const missingAvv = getMissingAvvRows().length;
 
   const pill = document.getElementById("loadStatus");
   if(textOverride){
@@ -1134,8 +1133,6 @@ function refreshLoadStatus(textOverride=null){
     <span>✅ geladen <span class="statusNum statusLoaded">${loaded}</span></span>
     <span>•</span>
     <span>offen <span class="statusNum statusOpen">${open}</span></span>
-    <span>•</span>
-    <span>AVV offen <span class="statusNum">${missingAvv}</span></span>
   `;
 }
 
