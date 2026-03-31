@@ -479,11 +479,20 @@ const URLS = {
   avv: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=avv`
 };
 
-const LS_THEME_KEY = "wasteMap_theme_v13";
-const LS_PANEL_POS_KEY = "wasteMap_panelPos_v13";
-const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v13";
-const LS_ROUTE_CACHE = "wasteMap_routeCache_v11";
-const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v10";
+const LS_THEME_KEY = "wasteMap_theme_v14";
+const LS_PANEL_POS_KEY = "wasteMap_panelPos_v14";
+const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v14";
+const LS_ROUTE_CACHE = "wasteMap_routeCache_v12";
+const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v11";
+
+const SHORT_HAUL_TIERS = [
+  { maxKm: 20,  pricePerKm: 12.5 },
+  { maxKm: 40,  pricePerKm: 6.25 },
+  { maxKm: 60,  pricePerKm: 4.0 },
+  { maxKm: 80,  pricePerKm: 3.0 },
+  { maxKm: 100, pricePerKm: 2.8 },
+  { maxKm: 120, pricePerKm: 2.3 }
+];
 
 let map;
 let isMobile = false;
@@ -877,20 +886,36 @@ function parseAvvList(value){
   const raw = str(value).trim();
   if(!raw) return [];
 
+  const parts = raw
+    .replace(/\r/g, "\n")
+    .split(/[\n;,/|]+/g)
+    .map(x => x.trim())
+    .filter(Boolean);
+
   const found = [];
   const seen = new Set();
 
-  const spacedMatches = raw.match(/\d{2}\s*\d{2}\s*\d{2}/g) || [];
-  for(const m of spacedMatches){
-    const code = cleanAvvCode(m);
-    if(code && !seen.has(code)){
-      seen.add(code);
-      found.push(code);
+  for(const part of parts){
+    const direct = cleanAvvCode(part);
+    if(direct && !seen.has(direct)){
+      seen.add(direct);
+      found.push(direct);
+    }
+
+    const regexMatches = part.match(/\d{5,6}|\d{2}\s*\d{2}\s*\d{2}/g) || [];
+    for(const m of regexMatches){
+      const code = cleanAvvCode(m);
+      if(code && !seen.has(code)){
+        seen.add(code);
+        found.push(code);
+      }
     }
   }
 
-  const plainMatches = raw.match(/\d{5,6}/g) || [];
-  for(const m of plainMatches){
+  if(found.length) return found;
+
+  const fallbackMatches = raw.match(/\d{5,6}|\d{2}\s*\d{2}\s*\d{2}/g) || [];
+  for(const m of fallbackMatches){
     const code = cleanAvvCode(m);
     if(code && !seen.has(code)){
       seen.add(code);
@@ -904,42 +929,35 @@ function parseAvvList(value){
 function extractValidAvvsFromRow(row){
   const validAvvs = new Set(avvRows.map(x => cleanAvvCode(x.avv)).filter(Boolean));
 
-  const rawText = Object.values(row || {})
-    .map(v => str(v))
-    .join(" ; ");
+  const sourceValues = getAllFilledValues(row, [
+    "avv_erlaubt",
+    "avv erlaubt",
+    "avv_liste",
+    "avv liste",
+    "avv-liste",
+    "avv",
+    "avvs"
+  ]);
 
-  if(!rawText.trim()) return [];
+  const rawText = sourceValues.length
+    ? sourceValues.map(v => str(v)).join(" ; ")
+    : Object.values(row || {}).map(v => str(v)).join(" ; ");
 
-  const matches = rawText.match(/\d{5,6}|\d{2}\s*\d{2}\s*\d{2}/g) || [];
-  const found = [];
-  const seen = new Set();
+  const parsed = parseAvvList(rawText);
+  if(!validAvvs.size) return parsed;
 
-  for(const m of matches){
-    const code = cleanAvvCode(m);
-    if(!code) continue;
-    if(!validAvvs.has(code)) continue;
-    if(seen.has(code)) continue;
-    seen.add(code);
-    found.push(code);
-  }
-
-  return found;
+  return parsed.filter(code => validAvvs.has(code));
 }
 
 function stationAcceptsAvv(station, selectedAvv){
   const selected = cleanAvvCode(selectedAvv);
   if(!selected) return false;
 
-  if(Array.isArray(station.avvList) && station.avvList.includes(selected)) return true;
-
-  const raw = str(station.avvRaw).trim();
-  if(!raw) return false;
-
-  const codes = parseAvvList(raw);
-  if(codes.includes(selected)) return true;
+  const list = Array.isArray(station.avvList) ? station.avvList : [];
+  if(list.includes(selected)) return true;
 
   const selectedNoZero = selected.replace(/^0+/, "");
-  return codes.some(code => code.replace(/^0+/, "") === selectedNoZero);
+  return list.some(code => String(code).replace(/^0+/, "") === selectedNoZero);
 }
 
 async function loadAvv(){
@@ -973,7 +991,8 @@ async function loadLadestellen(){
       "avvs"
     ]).map(v => str(v).trim()).filter(Boolean).join(";");
 
-    const avvJoined = detectedAvvs.length ? detectedAvvs.join(";") : avvJoinedByNames;
+    const avvList = detectedAvvs.length ? detectedAvvs : parseAvvList(avvJoinedByNames);
+    const avvJoined = avvList.join(";");
 
     const behandlung = str(getFirstFilledValue(r, ["behandlung"])).trim();
     const firma = str(getFirstFilledValue(r, ["firma"])).trim();
@@ -1001,8 +1020,8 @@ async function loadLadestellen(){
       lat,
       lon,
       preisBasis: toNum(getFirstFilledValue(r, ["preis_basis","preis basis"])),
-      avvRaw: avvJoined,
-      avvList: detectedAvvs.length ? detectedAvvs : parseAvvList(avvJoinedByNames),
+      avvRaw: avvJoined || avvJoinedByNames,
+      avvList,
       behandlung,
       co2Mod: normText(str(getFirstFilledValue(r, ["co2_mod","co2 mod"])).trim()),
       geoQuery: buildStationGeocodeQuery(r),
@@ -1083,7 +1102,7 @@ function hasUsableCoords(x){
   return isFinite(toNum(x.lat)) && isFinite(toNum(x.lon));
 }
 function hasUsableAvv(x){
-  return /\d/.test(str(x.avvRaw));
+  return Array.isArray(x.avvList) && x.avvList.length > 0;
 }
 function hasUsableTreatment(x){
   return !!str(x.behandlung).trim();
@@ -1116,6 +1135,7 @@ function refreshLoadStatus(textOverride=null){
 
   const openSet = new Set([
     ...getMissingGeoRows().map(x=>x.id),
+    ...getMissingAvvRows().map(x=>x.id),
     ...getMissingTreatmentRows().map(x=>x.id)
   ]);
 
@@ -1411,28 +1431,41 @@ function getCo2Calc(preisBasis, co2Raw, co2Mod){
   };
 }
 
+function getEffectiveFreightPerKm(km, defaultFreightPerKm){
+  if(!isFinite(km)) return defaultFreightPerKm;
+
+  for(const tier of SHORT_HAUL_TIERS){
+    if(km < tier.maxKm) return tier.pricePerKm;
+  }
+  return defaultFreightPerKm;
+}
+
 function calcRowValues(base, usedKm, inputs){
   const qtyT = inputs.qtyT;
-  const freightPerKm = inputs.freightPerKm;
+  const defaultFreightPerKm = inputs.freightPerKm;
   const calcMode = inputs.calcMode;
   const targetValue = inputs.targetValue;
 
-  const freightPerT = (usedKm * freightPerKm / qtyT);
+  const effectiveFreightPerKm = getEffectiveFreightPerKm(usedKm, defaultFreightPerKm);
+  const freightPerT = (usedKm * effectiveFreightPerKm / qtyT);
   const ekProT = base.preisNachCo2 + freightPerT;
   const gesamt = ekProT * qtyT;
 
   const targetEk = calcMode === "targetEk" ? targetValue : NaN;
   const targetMargin = calcMode === "targetMargin" ? targetValue : NaN;
   const delta = isFinite(targetEk) ? (targetEk - ekProT) : NaN;
+
   const mindestEk = calcMode === "targetMargin" && isFinite(targetMargin)
-    ? (ekProT - targetMargin)
+    ? (ekProT + targetMargin)
     : NaN;
+
   const displayValue = calcMode === "targetMargin" ? mindestEk : ekProT;
 
   return {
     ...base,
     calcMode,
     calcKm: usedKm,
+    usedFreightPerKm: effectiveFreightPerKm,
     freightPerT,
     ekProT,
     gesamt,
@@ -1630,7 +1663,7 @@ function renderResultsTable(results, inputs){
 
   for(const row of results){
     const valueLine = calcMode === "targetMargin"
-      ? `<b>${fmt(row.mindestEk)} €/t</b><br><span class="small">EK abzüglich Ziel-Rohertrag</span>`
+      ? `<b>${fmt(row.mindestEk)} €/t</b><br><span class="small">EK zuzüglich Ziel-Rohertrag</span>`
       : `<b>${fmt(row.ekProT)} €/t</b><br><span class="small">${fmt(row.gesamt)} € für ${fmt(qtyT,1)} t</span>`;
 
     const tr = document.createElement("tr");
@@ -1638,7 +1671,7 @@ function renderResultsTable(results, inputs){
       <td>
         <b>${esc(row.entity.firma || "—")}</b><br>
         <span class="small">${esc(row.entity.ladestelle)}</span><br>
-        <span class="small">AVV ${esc((row.entity.avvList && row.entity.avvList.length ? row.entity.avvList.join(", ") : row.entity.avvRaw) || "—")} · ${esc(row.entity.behandlung)} · Basis ${fmt(row.preisBasis)} €/t · CO2_mod ${esc(row.co2Mod)}</span>
+        <span class="small">AVV ${esc((row.entity.avvList && row.entity.avvList.length ? row.entity.avvList.join(", ") : row.entity.avvRaw) || "—")} · ${esc(row.entity.behandlung)} · Basis ${fmt(row.preisBasis)} €/t · CO2_mod ${esc(row.co2Mod)} · Fracht ${fmt(row.usedFreightPerKm)} €/km</span>
       </td>
       <td>${fmt(row.calcKm,0)}</td>
       <td>${valueLine}</td>
@@ -1771,17 +1804,20 @@ function showDetail(row){
     <div class="kv"><span class="k">CO2 Anteil extra</span><span class="v">${fmt(row.co2Anteil)} €/t</span></div>
     <div class="kv"><span class="k">Preis nach CO2</span><span class="v">${fmt(row.preisNachCo2)} €/t</span></div>
 
-    <div class="kv"><span class="k">Fracht</span><span class="v">${fmt(row.freightPerT)} €/t</span></div>
+    <div class="kv"><span class="k">Fracht €/km</span><span class="v">${fmt(row.usedFreightPerKm)} €/km</span></div>
+    <div class="kv"><span class="k">Fracht / t</span><span class="v">${fmt(row.freightPerT)} €/t</span></div>
+
     <div class="kv"><span class="k">EK / t</span><span class="v">${fmt(row.ekProT)} €/t</span></div>
+    <div class="kv"><span class="k">Gesamt</span><span class="v">${fmt(row.gesamt)} €</span></div>
 
     <div class="kv"><span class="k">Menge</span><span class="v">${fmt(qtyT,1)} t</span></div>
-    <div class="kv"><span class="k">Gesamt</span><span class="v">${fmt(row.gesamt)} €</span></div>
+    <div class="kv"><span class="k">Hinweis Fracht</span><span class="v">${row.routeKm < 120 ? "Kurzstrecken-Staffel aktiv" : "Standardwert aus Eingabe"}</span></div>
 
     ${resultLineA}
     ${resultLineB}
 
     <div class="kv"><span class="k">Koordinaten</span><span class="v">${fmt(row.entity.lat,5)}, ${fmt(row.entity.lon,5)}</span></div>
-    <div class="kv"><span class="k">Hinweis</span><span class="v">${row.co2Mod === "incl" ? "CO2 bereits in Preis_Basis enthalten" : (row.co2Mod === "add" ? "CO2 wird aufgeschlagen" : "kein zusätzlicher CO2-Aufschlag")}</span></div>
+    <div class="kv"><span class="k">Hinweis CO2</span><span class="v">${row.co2Mod === "incl" ? "CO2 bereits in Preis_Basis enthalten" : (row.co2Mod === "add" ? "CO2 wird aufgeschlagen" : "kein zusätzlicher CO2-Aufschlag")}</span></div>
   `;
 
   box.style.display = "block";
