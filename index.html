@@ -1129,16 +1129,41 @@ function getIssueRows(){
     !hasUsableCoords(x) || !hasUsableAvv(x) || !hasUsableTreatment(x)
   );
 }
+function getStationUniqueKey(x){
+  return [
+    normText(x.firma || ""),
+    normText(x.ladestelle || ""),
+    isFinite(toNum(x.lat)) ? toNum(x.lat).toFixed(5) : "",
+    isFinite(toNum(x.lon)) ? toNum(x.lon).toFixed(5) : ""
+  ].join("|");
+}
 
+function getUniqueStations(list){
+  const map = new Map();
+
+  for(const x of list || []){
+    const key = getStationUniqueKey(x);
+    if(!map.has(key)){
+      map.set(key, x);
+    }
+  }
+
+  return Array.from(map.values());
+}
 function refreshLoadStatus(textOverride=null){
-  const total = ladestellen.length;
+  const uniqueAll = getUniqueStations(ladestellen);
+
+  const missingGeo = getUniqueStations(getMissingGeoRows());
+  const missingAvv = getUniqueStations(getMissingAvvRows());
+  const missingTreatment = getUniqueStations(getMissingTreatmentRows());
 
   const openSet = new Set([
-    ...getMissingGeoRows().map(x=>x.id),
-    ...getMissingAvvRows().map(x=>x.id),
-    ...getMissingTreatmentRows().map(x=>x.id)
+    ...missingGeo.map(x => getStationUniqueKey(x)),
+    ...missingAvv.map(x => getStationUniqueKey(x)),
+    ...missingTreatment.map(x => getStationUniqueKey(x))
   ]);
 
+  const total = uniqueAll.length;
   const open = openSet.size;
   const loaded = total - open;
 
@@ -1155,7 +1180,6 @@ function refreshLoadStatus(textOverride=null){
     <span>offen <span class="statusNum statusOpen">${open}</span></span>
   `;
 }
-
 function updateLoadStatus(text){
   const el = document.getElementById("loadStatus");
   el.innerHTML = `<span class="dot"></span> ${esc(text)}`;
