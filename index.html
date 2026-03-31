@@ -479,20 +479,11 @@ const URLS = {
   avv: `https://docs.google.com/spreadsheets/d/${CONFIG.spreadsheetId}/gviz/tq?tqx=out:csv&sheet=avv`
 };
 
-const LS_THEME_KEY = "wasteMap_theme_v14";
-const LS_PANEL_POS_KEY = "wasteMap_panelPos_v14";
-const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v14";
-const LS_ROUTE_CACHE = "wasteMap_routeCache_v12";
-const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v11";
-
-const SHORT_HAUL_TIERS = [
-  { maxKm: 20,  pricePerKm: 12.5 },
-  { maxKm: 40,  pricePerKm: 6.25 },
-  { maxKm: 60,  pricePerKm: 4.0 },
-  { maxKm: 80,  pricePerKm: 3.0 },
-  { maxKm: 100, pricePerKm: 2.8 },
-  { maxKm: 120, pricePerKm: 2.3 }
-];
+const LS_THEME_KEY = "wasteMap_theme_v15";
+const LS_PANEL_POS_KEY = "wasteMap_panelPos_v15";
+const LS_SUPPLIER_CACHE = "wasteMap_supplierGeo_v15";
+const LS_ROUTE_CACHE = "wasteMap_routeCache_v13";
+const LS_STATION_GEO_CACHE = "wasteMap_stationGeo_v12";
 
 let map;
 let isMobile = false;
@@ -1150,6 +1141,7 @@ function getUniqueStations(list){
 
   return Array.from(map.values());
 }
+
 function refreshLoadStatus(textOverride=null){
   const uniqueAll = getUniqueStations(ladestellen);
 
@@ -1180,6 +1172,7 @@ function refreshLoadStatus(textOverride=null){
     <span>offen <span class="statusNum statusOpen">${open}</span></span>
   `;
 }
+
 function updateLoadStatus(text){
   const el = document.getElementById("loadStatus");
   el.innerHTML = `<span class="dot"></span> ${esc(text)}`;
@@ -1455,13 +1448,69 @@ function getCo2Calc(preisBasis, co2Raw, co2Mod){
   };
 }
 
-function getEffectiveFreightPerKm(km, defaultFreightPerKm){
-  if(!isFinite(km)) return defaultFreightPerKm;
-
-  for(const tier of SHORT_HAUL_TIERS){
-    if(km < tier.maxKm) return tier.pricePerKm;
+function getFreightModelByDistance(km, defaultFreightPerKm){
+  if(!isFinite(km)){
+    return {
+      freightTotal: NaN,
+      usedFreightPerKm: defaultFreightPerKm,
+      freightMode: "unbekannt",
+      freightHint: "Keine Distanz verfügbar"
+    };
   }
-  return defaultFreightPerKm;
+
+  if(km > 150){
+    const total = km * defaultFreightPerKm;
+    return {
+      freightTotal: total,
+      usedFreightPerKm: defaultFreightPerKm,
+      freightMode: "standard_per_km",
+      freightHint: "Über 150 km: Standardwert aus Eingabe"
+    };
+  }
+
+  if(km >= 120){
+    return {
+      freightTotal: 300,
+      usedFreightPerKm: 300 / km,
+      freightMode: "pauschal_300",
+      freightHint: "120–150 km: Pauschale 300,00 €"
+    };
+  }
+
+  if(km >= 100){
+    return {
+      freightTotal: 280,
+      usedFreightPerKm: 280 / km,
+      freightMode: "pauschal_280",
+      freightHint: "100–119 km: Pauschale 280,00 €"
+    };
+  }
+
+  if(km >= 80){
+    return {
+      freightTotal: 275,
+      usedFreightPerKm: 275 / km,
+      freightMode: "pauschal_275",
+      freightHint: "80–99 km: Pauschale 275,00 €"
+    };
+  }
+
+  if(km < 60){
+    return {
+      freightTotal: 250,
+      usedFreightPerKm: 250 / km,
+      freightMode: "pauschal_250",
+      freightHint: "Unter 60 km: Pauschale 250,00 €"
+    };
+  }
+
+  const total = km * defaultFreightPerKm;
+  return {
+    freightTotal: total,
+    usedFreightPerKm: defaultFreightPerKm,
+    freightMode: "fallback_60_79",
+    freightHint: "60–79 km nicht definiert: Standardwert aus Eingabe genutzt"
+  };
 }
 
 function calcRowValues(base, usedKm, inputs){
@@ -1470,8 +1519,9 @@ function calcRowValues(base, usedKm, inputs){
   const calcMode = inputs.calcMode;
   const targetValue = inputs.targetValue;
 
-  const effectiveFreightPerKm = getEffectiveFreightPerKm(usedKm, defaultFreightPerKm);
-  const freightPerT = (usedKm * effectiveFreightPerKm / qtyT);
+  const freightInfo = getFreightModelByDistance(usedKm, defaultFreightPerKm);
+  const freightTotal = freightInfo.freightTotal;
+  const freightPerT = freightTotal / qtyT;
   const ekProT = base.preisNachCo2 + freightPerT;
   const gesamt = ekProT * qtyT;
 
@@ -1489,7 +1539,10 @@ function calcRowValues(base, usedKm, inputs){
     ...base,
     calcMode,
     calcKm: usedKm,
-    usedFreightPerKm: effectiveFreightPerKm,
+    freightTotal,
+    usedFreightPerKm: freightInfo.usedFreightPerKm,
+    freightMode: freightInfo.freightMode,
+    freightHint: freightInfo.freightHint,
     freightPerT,
     ekProT,
     gesamt,
@@ -1695,7 +1748,7 @@ function renderResultsTable(results, inputs){
       <td>
         <b>${esc(row.entity.firma || "—")}</b><br>
         <span class="small">${esc(row.entity.ladestelle)}</span><br>
-        <span class="small">AVV ${esc((row.entity.avvList && row.entity.avvList.length ? row.entity.avvList.join(", ") : row.entity.avvRaw) || "—")} · ${esc(row.entity.behandlung)} · Basis ${fmt(row.preisBasis)} €/t · CO2_mod ${esc(row.co2Mod)} · Fracht ${fmt(row.usedFreightPerKm)} €/km</span>
+        <span class="small">AVV ${esc((row.entity.avvList && row.entity.avvList.length ? row.entity.avvList.join(", ") : row.entity.avvRaw) || "—")} · ${esc(row.entity.behandlung)} · Basis ${fmt(row.preisBasis)} €/t · CO2_mod ${esc(row.co2Mod)} · Fracht ${fmt(row.freightTotal)} € gesamt</span>
       </td>
       <td>${fmt(row.calcKm,0)}</td>
       <td>${valueLine}</td>
@@ -1828,14 +1881,14 @@ function showDetail(row){
     <div class="kv"><span class="k">CO2 Anteil extra</span><span class="v">${fmt(row.co2Anteil)} €/t</span></div>
     <div class="kv"><span class="k">Preis nach CO2</span><span class="v">${fmt(row.preisNachCo2)} €/t</span></div>
 
-    <div class="kv"><span class="k">Fracht €/km</span><span class="v">${fmt(row.usedFreightPerKm)} €/km</span></div>
+    <div class="kv"><span class="k">Fracht gesamt</span><span class="v">${fmt(row.freightTotal)} €</span></div>
     <div class="kv"><span class="k">Fracht / t</span><span class="v">${fmt(row.freightPerT)} €/t</span></div>
 
     <div class="kv"><span class="k">EK / t</span><span class="v">${fmt(row.ekProT)} €/t</span></div>
     <div class="kv"><span class="k">Gesamt</span><span class="v">${fmt(row.gesamt)} €</span></div>
 
     <div class="kv"><span class="k">Menge</span><span class="v">${fmt(qtyT,1)} t</span></div>
-    <div class="kv"><span class="k">Hinweis Fracht</span><span class="v">${row.routeKm < 120 ? "Kurzstrecken-Staffel aktiv" : "Standardwert aus Eingabe"}</span></div>
+    <div class="kv"><span class="k">Frachtlogik</span><span class="v">${esc(row.freightHint || "—")}</span></div>
 
     ${resultLineA}
     ${resultLineB}
